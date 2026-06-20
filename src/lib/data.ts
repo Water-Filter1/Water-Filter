@@ -524,6 +524,22 @@ export async function createOrder(data: {
     });
   });
 
+  await upsertClientFromOrder({
+    phone,
+    customerName: name,
+    city,
+    address,
+    source: row.source,
+    createdAt: row.createdAt,
+  });
+  await logActivity({
+    actor: row.source === "phone" ? "staff" : "customer",
+    action: "order.created",
+    entity: row.id,
+    summary: `New order ${row.id} — ${name}, ${city}`,
+    meta: { total, city, name, source: row.source },
+  });
+
   return toOrder(row);
 }
 
@@ -981,6 +997,13 @@ export async function createReview(data: {
   await prisma.review.create({
     data: { productId: data.productId, name, rating, comment, status: "pending" },
   });
+  await logActivity({
+    actor: "customer",
+    action: "review.created",
+    entity: data.productId,
+    summary: `New review (${rating}★) by ${name}`,
+    meta: { rating, name },
+  });
 }
 
 /** Approved reviews for a product (newest first) — storefront. */
@@ -1062,4 +1085,286 @@ export async function setReviewStatus(id: string, status: "approved" | "rejected
     where: { id: r.productId },
     data: { rating: Math.round(avg * 10) / 10, reviewCount: count },
   });
+}
+
+/* ============================================================
+   Activity log — audit trail / "everything that happened" feed
+   ============================================================ */
+
+export type ActivityEntry = {
+  id: string;
+  actor: string;
+  action: string;
+  entity: string | null;
+  summary: string;
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+/** Write one audit-trail entry. Never throws — logging must not break the flow. */
+export async function logActivity(entry: {
+  actor?: string;
+  action: string;
+  entity?: string;
+  summary: string;
+  meta?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    await prisma.activityLog.create({
+      data: {
+        actor: entry.actor ?? "system",
+        action: entry.action,
+        entity: entry.entity ?? null,
+        summary: entry.summary,
+        meta: (entry.meta as object) ?? undefined,
+      },
+    });
+  } catch {
+    /* swallow — the audit log is best-effort */
+  }
+}
+
+export async function getRecentActivity(limit = 14): Promise<ActivityEntry[]> {
+  const rows = await prisma.activityLog.findMany({
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    actor: r.actor,
+    action: r.action,
+    entity: r.entity,
+    summary: r.summary,
+    meta: (r.meta as Record<string, unknown> | null) ?? null,
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
+
+/* ============================================================
+   Clients CRM — real customer directory (keyed by phone)
+   ============================================================ */
+
+const normPhone = (p: string) => p.replace(/\s/g, "");
+
+/** Create/refresh the CRM record for an order's customer. Best-effort. */
+export async function upsertClientFromOrder(o: {
+  phone: string;
+  customerName: string;
+  city: string;
+  address: string;
+  source: string;
+  createdAt: Date;
+}): Promise<void> {
+  const phone = normPhone(o.phone);
+  try {
+    await prisma.client.upsert({
+      where: { phone },
+      create: {
+        phone,
+        name: o.customerName,
+        city: o.city,
+        address: o.address,
+        source: o.source === "phone" ? "phone" : "web",
+        firstOrderAt: o.createdAt,
+      },
+      // refresh latest contact details but never touch status/note
+      update: { name: o.customerName, city: o.city, address: o.address },
+    });
+  } catch {
+    /* best-effort */
+  }
+}
+
+export type ClientRow = {
+  id: string;
+  phone: string;
+  name: string;
+  city: string;
+  email: string | null;
+  status: string;
+  source: string;
+  firstOrderAt: string;
+  orderCount: number;
+  totalSpent: number;
+  lastOrderAt: string | null;
+};
+
+type OrderAgg = { count: number; spent: number; last: Date | null };
+
+function aggregateOrdersByPhone(
+  orders: { phone: string; total: number; status: string; createdAt: Date }[],
+): Map<string, OrderAgg> {
+  const agg = new Map<string, OrderAgg>();
+  for (const o of orders) {
+    const key = normPhone(o.phone);
+    const a = agg.get(key) ?? { count: 0, spent: 0, last: null };
+    a.count += 1;
+    if (SALE_STATUSES.includes(o.status)) a.spent += o.total; // realized spend only
+    if (!a.last || o.createdAt > a.last) a.last = o.createdAt;
+    agg.set(key, a);
+  }
+  return agg;
+}
+
+/** Full client directory with live order aggregates (newest customers first). */
+export async function getClientsList(): Promise<ClientRow[]> {
+  const [clients, orders] = await Promise.all([
+    prisma.client.findMany({ orderBy: { firstOrderAt: "desc" } }),
+    prisma.order.findMany({ select: { phone: true, total: true, status: true, createdAt: true } }),
+  ]);
+  const agg = aggregateOrdersByPhone(orders);
+  return clients.map((c) => {
+    const a = agg.get(c.phone) ?? { count: 0, spent: 0, last: null };
+    return {
+      id: c.id,
+      phone: c.phone,
+      name: c.name,
+      city: c.city,
+      email: c.email,
+      status: c.status,
+      source: c.source,
+      firstOrderAt: c.firstOrderAt.toISOString(),
+      orderCount: a.count,
+      totalSpent: a.spent,
+      lastOrderAt: a.last?.toISOString() ?? null,
+    };
+  });
+}
+
+export type ClientDetail = ClientRow & {
+  address: string | null;
+  note: string | null;
+  avgBasket: number;
+  orders: { id: string; total: number; status: string; createdAt: string }[];
+};
+
+export async function getClientDetail(phone: string): Promise<ClientDetail | null> {
+  const key = normPhone(phone);
+  const c = await prisma.client.findUnique({ where: { phone: key } });
+  if (!c) return null;
+  const orders = await prisma.order.findMany({
+    where: { phone: key },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, total: true, status: true, createdAt: true },
+  });
+  const realized = orders.filter((o) => SALE_STATUSES.includes(o.status));
+  const totalSpent = realized.reduce((s, o) => s + o.total, 0);
+  return {
+    id: c.id,
+    phone: c.phone,
+    name: c.name,
+    city: c.city,
+    email: c.email,
+    status: c.status,
+    source: c.source,
+    firstOrderAt: c.firstOrderAt.toISOString(),
+    address: c.address,
+    note: c.note,
+    orderCount: orders.length,
+    totalSpent,
+    lastOrderAt: orders[0]?.createdAt.toISOString() ?? null,
+    avgBasket: realized.length ? Math.round(totalSpent / realized.length) : 0,
+    orders: orders.slice(0, 8).map((o) => ({
+      id: o.id,
+      total: o.total,
+      status: o.status,
+      createdAt: o.createdAt.toISOString(),
+    })),
+  };
+}
+
+export type ClientSegments = {
+  total: number;
+  active: number;
+  inactive: number;
+  withOrders: number;
+  newThisMonth: number;
+  revenue: number;
+  byCity: { city: string; count: number }[];
+  topSpenders: { name: string; phone: string; spent: number }[];
+  newClients: { name: string; phone: string; firstOrderAt: string }[];
+};
+
+/** KPI + chart data for the Clients page header and bottom widgets. */
+export async function getClientSegments(): Promise<ClientSegments> {
+  const list = await getClientsList();
+  const now = new Date();
+  const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+  const total = list.length;
+  const active = list.filter((c) => c.status === "active").length;
+  const withOrders = list.filter((c) => c.orderCount > 0).length;
+  const newThisMonth = list.filter((c) => new Date(c.firstOrderAt).getTime() >= startMonth).length;
+  const revenue = list.reduce((s, c) => s + c.totalSpent, 0);
+
+  const cityMap = new Map<string, number>();
+  for (const c of list) {
+    const k = c.city || "—";
+    cityMap.set(k, (cityMap.get(k) ?? 0) + 1);
+  }
+  const sortedCities = [...cityMap.entries()].sort((a, b) => b[1] - a[1]);
+  const top4 = sortedCities.slice(0, 4).map(([city, count]) => ({ city, count }));
+  const rest = sortedCities.slice(4).reduce((s, [, n]) => s + n, 0);
+  const byCity = rest > 0 ? [...top4, { city: "__other__", count: rest }] : top4;
+
+  const topSpenders = [...list]
+    .sort((a, b) => b.totalSpent - a.totalSpent)
+    .slice(0, 5)
+    .map((c) => ({ name: c.name, phone: c.phone, spent: c.totalSpent }));
+  const newClients = [...list]
+    .sort((a, b) => new Date(b.firstOrderAt).getTime() - new Date(a.firstOrderAt).getTime())
+    .slice(0, 6)
+    .map((c) => ({ name: c.name, phone: c.phone, firstOrderAt: c.firstOrderAt }));
+
+  return {
+    total,
+    active,
+    inactive: total - active,
+    withOrders,
+    newThisMonth,
+    revenue,
+    byCity,
+    topSpenders,
+    newClients,
+  };
+}
+
+export async function setClientStatus(phone: string, status: "active" | "inactive"): Promise<void> {
+  await prisma.client.update({ where: { phone: normPhone(phone) }, data: { status } });
+}
+
+export async function updateClient(
+  phone: string,
+  data: { name?: string; city?: string; email?: string | null; address?: string | null; note?: string | null },
+): Promise<void> {
+  await prisma.client.update({ where: { phone: normPhone(phone) }, data });
+}
+
+/** One-time backfill: create CRM records from existing orders (earliest order wins). */
+export async function backfillClients(): Promise<number> {
+  const orders = await prisma.order.findMany({
+    orderBy: { createdAt: "asc" },
+    select: { phone: true, customerName: true, city: true, address: true, source: true, createdAt: true },
+  });
+  const seen = new Set<string>();
+  let created = 0;
+  for (const o of orders) {
+    const phone = normPhone(o.phone);
+    if (seen.has(phone)) continue;
+    seen.add(phone);
+    const exists = await prisma.client.findUnique({ where: { phone }, select: { id: true } });
+    if (exists) continue;
+    await prisma.client.create({
+      data: {
+        phone,
+        name: o.customerName,
+        city: o.city,
+        address: o.address,
+        source: o.source === "phone" ? "phone" : "web",
+        firstOrderAt: o.createdAt,
+      },
+    });
+    created++;
+  }
+  return created;
 }

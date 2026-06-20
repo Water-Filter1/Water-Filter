@@ -32,6 +32,7 @@ const NAV = [
   { labelKey: "admin.nav.messages", href: "/admin/messages", icon: MessageSquare },
   { labelKey: "admin.nav.reviews", href: "/admin/reviews", icon: Star },
   { labelKey: "admin.nav.clients", href: "/admin/clients", icon: Users },
+  { labelKey: "admin.nav.maintenance", href: "/admin/maintenance", icon: Wrench },
   { labelKey: "admin.nav.users", href: "/admin/users", icon: UserCog },
   { labelKey: "admin.nav.settings", href: "/admin/settings", icon: Settings },
 ];

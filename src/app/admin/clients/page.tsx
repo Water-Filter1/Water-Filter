@@ -1,22 +1,20 @@
-import { getInstallations, getPlombiers } from "@/lib/data";
-import { ClientsSuivi } from "@/components/admin/clients-suivi";
+import { getClientsList, getClientSegments } from "@/lib/data";
+import { ClientsManager } from "@/components/admin/clients-manager";
 import { getT } from "@/i18n/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminClientsPage() {
   const { t } = await getT();
-  const [installations, plombiers] = await Promise.all([getInstallations(), getPlombiers()]);
+  const [clients, segments] = await Promise.all([getClientsList(), getClientSegments()]);
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="font-display text-2xl font-bold text-ink">{t("admin.clientsPage.title")}</h1>
-        <p className="text-sm text-ink-soft">
-          {t("admin.clientsPage.subtitle")}
-        </p>
+        <p className="text-sm text-ink-soft">{t("admin.clientsPage.subtitle")}</p>
       </div>
-      <ClientsSuivi installations={installations} plombiers={plombiers} />
+      <ClientsManager clients={clients} segments={segments} />
     </div>
   );
 }
