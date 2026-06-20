@@ -1340,6 +1340,169 @@ export async function updateClient(
   await prisma.client.update({ where: { phone: normPhone(phone) }, data });
 }
 
+/* ============================================================
+   Dashboard overview — real operational + business metrics
+   ============================================================ */
+
+export type DashboardOverview = {
+  totalOrders: number;
+  byStatus: Record<string, number>;
+  newOrdersToday: number;
+  pending: number;
+  installationsToday: number;
+  savDue: number;
+  ordersThisMonth: number;
+  ordersMoMPct: number | null;
+  revenueThisMonth: number;
+  revenueMoMPct: number | null;
+  revenueTotal: number;
+  stockTotal: number;
+  lowStockCount: number;
+  activeClients: number;
+  installedDevices: number;
+  technicians: number;
+};
+
+export async function getDashboardOverview(): Promise<DashboardOverview> {
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endToday = new Date(startToday);
+  endToday.setDate(endToday.getDate() + 1);
+  const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const savHorizon = new Date(now.getTime() + 14 * 86_400_000);
+
+  const [
+    newOrdersToday,
+    grouped,
+    installationsToday,
+    ordersThisMonth,
+    ordersLastMonth,
+    saleThisMonth,
+    saleLastMonth,
+    saleAll,
+    stockAgg,
+    lowStockCount,
+    activeClients,
+    installedDevices,
+    technicians,
+    savDue,
+  ] = await Promise.all([
+    prisma.order.count({ where: { createdAt: { gte: startToday } } }),
+    prisma.order.groupBy({ by: ["status"], _count: { _all: true } }),
+    prisma.order.count({ where: { kind: "install", installDate: { gte: startToday, lt: endToday } } }),
+    prisma.order.count({ where: { createdAt: { gte: startMonth } } }),
+    prisma.order.count({ where: { createdAt: { gte: startLastMonth, lt: startMonth } } }),
+    prisma.order.aggregate({ _sum: { total: true }, where: { status: { in: SALE_STATUSES }, createdAt: { gte: startMonth } } }),
+    prisma.order.aggregate({ _sum: { total: true }, where: { status: { in: SALE_STATUSES }, createdAt: { gte: startLastMonth, lt: startMonth } } }),
+    prisma.order.aggregate({ _sum: { total: true }, where: { status: { in: SALE_STATUSES } } }),
+    prisma.product.aggregate({ _sum: { stock: true } }),
+    prisma.product.count({ where: { stock: { lte: 5 } } }),
+    prisma.client.count({ where: { status: "active" } }),
+    prisma.order.count({ where: { status: "installed" } }),
+    prisma.adminUser.count({ where: { role: "plombier" } }),
+    prisma.order.count({ where: { nextMaintenanceAt: { not: null, lte: savHorizon } } }),
+  ]);
+
+  const byStatus: Record<string, number> = {};
+  let totalOrders = 0;
+  for (const g of grouped) {
+    byStatus[g.status] = g._count._all;
+    totalOrders += g._count._all;
+  }
+
+  const revenueThisMonth = saleThisMonth._sum.total ?? 0;
+  const revenueLastMonth = saleLastMonth._sum.total ?? 0;
+  const pctChange = (cur: number, prev: number): number | null =>
+    prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null;
+
+  return {
+    totalOrders,
+    byStatus,
+    newOrdersToday,
+    pending: byStatus["pending"] ?? 0,
+    installationsToday,
+    savDue,
+    ordersThisMonth,
+    ordersMoMPct: pctChange(ordersThisMonth, ordersLastMonth),
+    revenueThisMonth,
+    revenueMoMPct: pctChange(revenueThisMonth, revenueLastMonth),
+    revenueTotal: saleAll._sum.total ?? 0,
+    stockTotal: stockAgg._sum.stock ?? 0,
+    lowStockCount,
+    activeClients,
+    installedDevices,
+    technicians,
+  };
+}
+
+export type ConfirmationToday = {
+  received: number;
+  confirmed: number;
+  cancelled: number;
+  noAnswer: number;
+  callback: number;
+  untreated: number;
+  rate: number;
+};
+
+/** Today's confirmation-call breakdown (from orders received today). */
+export async function getConfirmationToday(): Promise<ConfirmationToday> {
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const orders = await prisma.order.findMany({
+    where: { createdAt: { gte: startToday } },
+    select: { status: true, lastOutcome: true },
+  });
+  const received = orders.length;
+  const confirmed = orders.filter(
+    (o) => o.status === "confirmed" || o.status === "installed" || o.lastOutcome === "confirmed",
+  ).length;
+  const cancelled = orders.filter((o) => o.status === "cancelled" || o.lastOutcome === "cancelled").length;
+  const noAnswer = orders.filter((o) => o.lastOutcome === "pas_reponse").length;
+  const callback = orders.filter((o) => o.lastOutcome === "rappeler").length;
+  const untreated = orders.filter((o) => o.status === "pending" && !o.lastOutcome).length;
+  return {
+    received,
+    confirmed,
+    cancelled,
+    noAnswer,
+    callback,
+    untreated,
+    rate: received ? Math.round((confirmed / received) * 100) : 0,
+  };
+}
+
+export type TechPerf = { email: string; name: string; installs: number; sav: number; revenue: number };
+
+/** Per-technician performance from completed jobs (real). */
+export async function getTechnicianPerformance(): Promise<TechPerf[]> {
+  const [plombiers, completed] = await Promise.all([
+    prisma.adminUser.findMany({ where: { role: "plombier" }, select: { email: true, name: true } }),
+    prisma.order.findMany({
+      where: { assignedTo: { not: null }, completedAt: { not: null } },
+      select: { assignedTo: true, total: true, kind: true },
+    }),
+  ]);
+  const stats = new Map<string, { installs: number; sav: number; revenue: number }>();
+  for (const o of completed) {
+    const k = o.assignedTo!;
+    const s = stats.get(k) ?? { installs: 0, sav: 0, revenue: 0 };
+    if (o.kind === "maintenance") s.sav += 1;
+    else {
+      s.installs += 1;
+      s.revenue += o.total;
+    }
+    stats.set(k, s);
+  }
+  return plombiers
+    .map((p) => {
+      const s = stats.get(p.email) ?? { installs: 0, sav: 0, revenue: 0 };
+      return { email: p.email, name: p.name ?? p.email, ...s };
+    })
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
 /** One-time backfill: create CRM records from existing orders (earliest order wins). */
 export async function backfillClients(): Promise<number> {
   const orders = await prisma.order.findMany({
