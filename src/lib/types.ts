@@ -82,9 +82,6 @@ export type OrderStatus =
   | "pending"
   | "confirmed"
   | "installed"
-  | "shipped"
-  | "delivered"
-  | "returned"
   | "cancelled";
 
 export type OrderItem = {

@@ -14,27 +14,12 @@ import {
 } from "lucide-react";
 import { setJobStageAction } from "@/lib/order-actions";
 import { CompleteJobForm } from "./complete-job-form";
-import { formatMAD } from "@/lib/utils";
+import { formatMAD, waNumber, formatDateTime } from "@/lib/utils";
 import { useI18n } from "@/i18n/i18n-context";
 import type { Order } from "@/lib/types";
 
-function waNumber(phone: string): string {
-  const d = phone.replace(/\D/g, "");
-  if (d.startsWith("212")) return d;
-  if (d.startsWith("0")) return "212" + d.slice(1);
-  return d;
-}
-
 function formatWhen(iso: string | undefined, t: (key: string) => string): string {
-  if (!iso) return t("tech.job.toSchedule");
-  return new Date(iso).toLocaleString("fr-MA", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Africa/Casablanca",
-  });
+  return iso ? formatDateTime(iso) : t("tech.job.toSchedule");
 }
 
 const STEP_KEYS = ["tech.job.stepEnroute", "tech.job.stepArrived", "tech.job.stepDone"] as const;
@@ -165,8 +150,8 @@ export function PlombierJobCard({ order }: { order: Order }) {
         </button>
       )}
 
-      {/* finish: photo + mark installed */}
-      <CompleteJobForm orderId={order.id} />
+      {/* finish: photo + mark installed + send invoice */}
+      <CompleteJobForm orderId={order.id} phone={order.phone} customerName={order.customerName} />
     </div>
   );
 }

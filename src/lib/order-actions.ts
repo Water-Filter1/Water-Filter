@@ -15,6 +15,8 @@ import {
   createMaintenanceVisit,
   setMaintenanceInterval,
   markMaintenanceDone,
+  createInvoiceFromOrder,
+  logActivity,
 } from "@/lib/data";
 import { uploadProductImage } from "@/lib/storage";
 import {
@@ -24,7 +26,7 @@ import {
   notifyOrderInstalled,
 } from "@/lib/notify";
 import { rateLimit, ipFrom } from "@/lib/rate-limit";
-import type { OrderItem, OrderStatus } from "@/lib/types";
+import type { OrderItem } from "@/lib/types";
 
 /** Resolves the caller's session + effective role and checks it's allowed. */
 async function requireStaff(roles: string[]) {
@@ -90,20 +92,6 @@ export async function createOrderAction(payload: {
   }
 }
 
-/** Admin only: change an order's status / confirmation note. */
-export async function updateOrderStatusAction(
-  id: string,
-  status: OrderStatus,
-  confirmationNote?: string,
-): Promise<void> {
-  await requireStaff(["admin"]);
-  await updateOrderStatus(id, status, confirmationNote);
-  revalidatePath("/admin/orders");
-  revalidatePath(`/admin/orders/${id}`);
-  revalidatePath("/admin");
-  revalidatePath("/admin/clients");
-}
-
 /**
  * Confirmateur/admin: confirm an order after calling the client, schedule the
  * install, auto-assign it to the plombier, and notify him by email.
@@ -114,7 +102,7 @@ export async function confirmOrderAction(input: {
   note?: string;
   assignedTo?: string; // selected plombier email; falls back to the first plombier
 }): Promise<{ ok: boolean; error?: string }> {
-  await requireStaff(["confirmateur", "admin"]);
+  const { session } = await requireStaff(["confirmateur", "admin"]);
 
   const when = new Date(input.installDate);
   if (isNaN(when.getTime())) return { ok: false, error: "Date d'installation invalide." };
@@ -130,6 +118,15 @@ export async function confirmOrderAction(input: {
   } catch {
     return { ok: false, error: "Cette commande n'est plus en attente (déjà traitée)." };
   }
+
+  await prisma.order.update({ where: { id: input.id }, data: { confirmedBy: session.email } });
+  await logActivity({
+    actor: session.email,
+    action: "order.confirmed",
+    entity: order.id,
+    summary: `Order ${order.id} confirmed`,
+    meta: { name: order.customerName, total: order.total },
+  });
 
   if (plombier) {
     await notifyPlombierAssignment(plombier, {
@@ -159,7 +156,7 @@ export async function recordCallOutcomeAction(
   id: string,
   outcome: "rappeler" | "pas_reponse" | "annuler",
 ): Promise<{ ok: boolean; error?: string }> {
-  await requireStaff(["confirmateur", "admin"]);
+  const { session } = await requireStaff(["confirmateur", "admin"]);
   const stamp = new Date().toLocaleString("fr-MA", {
     day: "numeric",
     month: "short",
@@ -169,7 +166,11 @@ export async function recordCallOutcomeAction(
   });
   if (outcome === "annuler") {
     await updateOrderStatus(id, "cancelled", `Annulée par le confirmateur · ${stamp}`);
-    await prisma.order.update({ where: { id }, data: { lastOutcome: "cancelled" } });
+    await prisma.order.update({
+      where: { id },
+      data: { lastOutcome: "cancelled", confirmedBy: session.email },
+    });
+    await logActivity({ actor: session.email, action: "order.cancelled", entity: id, summary: `Order ${id} cancelled` });
   } else {
     const label = outcome === "rappeler" ? "À rappeler" : "Pas de réponse";
     await updateOrderStatus(id, "pending", `${label} · ${stamp}`);
@@ -177,12 +178,23 @@ export async function recordCallOutcomeAction(
       where: { id },
       data: { lastOutcome: outcome, callAttempts: { increment: 1 } },
     });
+    await logActivity({ actor: session.email, action: "order.call", entity: id, summary: `${label} · ${id}`, meta: { outcome } });
   }
   revalidatePath("/confirmation");
   revalidatePath("/admin/orders");
   revalidatePath("/admin");
   revalidatePath("/admin/clients");
   return { ok: true };
+}
+
+/** Confirmateur/admin: record that they opened WhatsApp for an order (perf counts). */
+export async function logWhatsappAction(orderId: string): Promise<void> {
+  try {
+    const { session } = await requireStaff(["confirmateur", "admin"]);
+    await logActivity({ actor: session.email, action: "whatsapp.sent", entity: orderId, summary: `WhatsApp ${orderId}` });
+  } catch {
+    /* never block the WhatsApp link */
+  }
 }
 
 /** Plombier/admin: advance progress on an assigned job ("enroute" | "arrived"). */
@@ -211,7 +223,7 @@ export async function setJobStageAction(
  */
 export async function completeInstallationAction(
   formData: FormData,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; invoiceUrl?: string; invoiceRef?: string }> {
   const { session, role } = await requireStaff(["plombier", "admin"]);
 
   const id = String(formData.get("orderId") ?? "");
@@ -245,12 +257,30 @@ export async function completeInstallationAction(
     return { ok: false, error: "Cette commande a déjà été installée." };
   }
   await notifyOrderInstalled(updated); // keep the owner in the loop
+
+  // The job is now installed = paid. Generate the customer's facture so the technician
+  // can send it on the spot. Install orders only (maintenance visits are free, total 0).
+  // Best-effort: a facture hiccup must never fail the installation itself.
+  let invoiceUrl: string | undefined;
+  let invoiceRef: string | undefined;
+  if (updated.kind !== "maintenance") {
+    try {
+      const inv = await createInvoiceFromOrder(id, session.email);
+      const base = process.env.APP_URL || "http://localhost:3000";
+      invoiceUrl = `${base}/facture/${inv.id}`;
+      invoiceRef = inv.ref;
+    } catch {
+      /* facture not generated — installation still succeeded */
+    }
+  }
+
   revalidatePath("/technicien");
   revalidatePath("/admin/orders");
   revalidatePath(`/admin/orders/${id}`);
   revalidatePath("/admin");
   revalidatePath("/admin/clients");
-  return { ok: true };
+  revalidatePath("/admin/factures");
+  return { ok: true, invoiceUrl, invoiceRef };
 }
 
 /** Admin: schedule a maintenance visit for an installation (creates a plombier job + emails him). */

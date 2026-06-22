@@ -4,27 +4,12 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, MapPin, CalendarClock, X, User } from "lucide-react";
 import { recordCallOutcomeAction } from "@/lib/order-actions";
-import { formatMAD } from "@/lib/utils";
+import { formatMAD, waNumber, formatDateTime } from "@/lib/utils";
 import { useI18n } from "@/i18n/i18n-context";
 import type { Order } from "@/lib/types";
 
-function waNumber(phone: string): string {
-  const d = phone.replace(/\D/g, "");
-  if (d.startsWith("212")) return d;
-  if (d.startsWith("0")) return "212" + d.slice(1);
-  return d;
-}
-
 function formatWhen(iso: string | undefined, t: (key: string) => string): string {
-  if (!iso) return t("conf.confirmed.toSchedule");
-  return new Date(iso).toLocaleString("fr-MA", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Africa/Casablanca",
-  });
+  return iso ? formatDateTime(iso) : t("conf.confirmed.toSchedule");
 }
 
 export function ConfirmedOrderCard({ order }: { order: Order }) {

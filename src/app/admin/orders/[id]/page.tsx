@@ -8,9 +8,12 @@ import {
   StickyNote,
   Banknote,
 } from "lucide-react";
-import { getOrderById } from "@/lib/data";
+import { getOrderById, getInvoiceByOrderId } from "@/lib/data";
 import { StatusBadge } from "@/components/admin/status-badge";
-import { formatMAD, formatDate } from "@/lib/utils";
+import { OrderFactureButton } from "@/components/admin/order-facture-button";
+import { formatMAD, formatDate, waNumber } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import { Table, TableBody, TableRow, TableCell } from "@/components/ui/table";
 import { getT } from "@/i18n/server";
 
 /**
@@ -26,7 +29,7 @@ export default async function AdminOrderDetailPage({
   const order = await getOrderById(id);
   if (!order) notFound();
 
-  const { t } = await getT();
+  const [{ t }, invoice] = await Promise.all([getT(), getInvoiceByOrderId(id)]);
 
   return (
     <div>
@@ -45,40 +48,41 @@ export default async function AdminOrderDetailPage({
           </div>
           <p className="text-sm text-ink-soft">{t("admin.orderDetail.placedOn", { date: formatDate(order.createdAt) })}</p>
         </div>
+        <OrderFactureButton orderId={order.id} invoiceId={invoice?.id ?? null} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
         {/* Left: items */}
         <div className="space-y-6">
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <Card className="gap-0 overflow-hidden p-0">
             <h2 className="border-b border-slate-200 px-5 py-4 font-display font-bold text-ink">
               {t("admin.orderDetail.orderedItems")}
             </h2>
-            <table className="w-full text-left text-sm">
-              <tbody>
+            <Table>
+              <TableBody>
                 {order.items.map((it, i) => (
-                  <tr key={i} className="border-b border-slate-100 last:border-0">
-                    <td className="px-5 py-3">
+                  <TableRow key={i}>
+                    <TableCell>
                       <p className="font-medium text-ink" dir="auto">{it.name}</p>
                       {it.variantLabel && (
                         <p className="text-xs text-ink-soft">{it.variantLabel}</p>
                       )}
-                    </td>
-                    <td className="px-5 py-3 text-center text-ink-soft">× {it.qty}</td>
-                    <td className="px-5 py-3 text-right font-semibold text-ink">
+                    </TableCell>
+                    <TableCell className="text-center text-ink-soft">× {it.qty}</TableCell>
+                    <TableCell className="text-end font-semibold text-ink">
                       {formatMAD(it.price * it.qty)}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
             <div className="flex items-center justify-between bg-slate-50 px-5 py-4">
               <span className="font-bold text-ink">{t("admin.orderDetail.totalToCollect")}</span>
               <span className="font-display text-xl font-extrabold text-brand-700">
                 {formatMAD(order.total)}
               </span>
             </div>
-          </section>
+          </Card>
 
           {order.note && (
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -118,7 +122,7 @@ export default async function AdminOrderDetailPage({
                 <Phone className="h-4 w-4" /> {t("admin.orderDetail.call")}
               </a>
               <a
-                href={`https://wa.me/212${order.phone.replace(/^0/, "")}`}
+                href={`https://wa.me/${waNumber(order.phone)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 rounded-full bg-[#25D366] py-2.5 text-sm font-semibold text-white transition hover:brightness-105"

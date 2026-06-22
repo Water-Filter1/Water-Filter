@@ -29,3 +29,30 @@ export function formatDate(iso: string): string {
     timeZone: TZ,
   }).format(new Date(iso));
 }
+
+/** Long localized date + time, e.g. "lundi 12 mai 14:30". */
+export function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("fr-MA", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: TZ,
+  });
+}
+
+/** Add `months` to a date (ISO string or Date) → a new Date. */
+export function addMonths(d: string | Date, months: number): Date {
+  const r = new Date(d);
+  r.setMonth(r.getMonth() + months);
+  return r;
+}
+
+/** Moroccan local number (06.., 07..) → wa.me international format (212XXXXXXXXX). */
+export function waNumber(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("212")) return digits;
+  if (digits.startsWith("0")) return "212" + digits.slice(1);
+  return digits;
+}

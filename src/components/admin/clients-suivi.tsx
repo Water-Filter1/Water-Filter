@@ -18,24 +18,11 @@ import {
   setMaintenanceIntervalAction,
   markMaintenanceDoneAction,
 } from "@/lib/order-actions";
-import { formatDate } from "@/lib/utils";
+import { formatDate, waNumber, addMonths } from "@/lib/utils";
 import { useI18n } from "@/i18n/i18n-context";
 import type { Order } from "@/lib/types";
 
 type Plombier = { email: string; name: string | null; city: string | null };
-
-function waNumber(phone: string): string {
-  const d = phone.replace(/\D/g, "");
-  if (d.startsWith("212")) return d;
-  if (d.startsWith("0")) return "212" + d.slice(1);
-  return d;
-}
-
-function addMonths(iso: string, months: number): Date {
-  const r = new Date(iso);
-  r.setMonth(r.getMonth() + months);
-  return r;
-}
 
 const INTERVALS = [3, 4, 6, 8, 12];
 

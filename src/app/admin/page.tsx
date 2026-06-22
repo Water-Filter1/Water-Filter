@@ -9,82 +9,115 @@ import {
   AlertTriangle,
   TrendingUp,
   ArrowUpRight,
-  Users,
   Wallet,
   HardHat,
-} from "lucide-react";
+  Headphones,
+  Inbox,
+  Check,
+  X,
+  PhoneOff,
+  Minus,
+  Phone,
+  PhoneMissed,
+} from "@/components/admin/phosphor";
 import {
-  getDashboardOverview,
-  getConfirmationToday,
-  getTechnicianPerformance,
-  getRecentActivity,
-  getSalesSeries,
-  getLowStockProducts,
-  getTopSellers,
-  getOrders,
+  getDashboardData,
 } from "@/lib/data";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { SalesChart } from "@/components/admin/sales-chart";
 import { ActivityFeed } from "@/components/admin/activity-feed";
-import { STATUS_META, STATUS_ORDER } from "@/lib/order-status";
-import { formatMAD } from "@/lib/utils";
+import { ConfirmationDonut } from "@/components/admin/confirmation-donut";
+import { AgendaTimeline } from "@/components/admin/agenda-timeline";
+import { FacturesCard } from "@/components/admin/factures-card";
+import { IconProvider } from "@/components/admin/icon-provider";
+import { KpiCard } from "@/components/admin/kpi-card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+import { formatMAD, cn } from "@/lib/utils";
 import { getT } from "@/i18n/server";
 
 export const dynamic = "force-dynamic";
 
-const RING = 2 * Math.PI * 48;
-
 export default async function AdminDashboard() {
   const { t } = await getT();
-  const [overview, conf, techPerf, activity, salesSeries, lowStock, topSellers, allOrders] =
-    await Promise.all([
-      getDashboardOverview(),
-      getConfirmationToday(),
-      getTechnicianPerformance(),
-      getRecentActivity(12),
-      getSalesSeries(),
-      getLowStockProducts(5, 6),
-      getTopSellers(5),
-      getOrders(),
-    ]);
+  // Whole dashboard data, cached (Next Data Cache) — see getDashboardData in data.ts.
+  const {
+    overview,
+    conf,
+    techPerf,
+    confPerf,
+    activity,
+    salesSeries,
+    dailyExpenses,
+    orderActivity,
+    metricSeries,
+    lowStock,
+    topSellers,
+    allOrders,
+    finance,
+    upcomingJobs,
+    invoiceableOrders,
+    recentInvoices,
+  } = await getDashboardData();
   const recent = allOrders.slice(0, 6);
 
-  const fmtPct = (p: number | null) => (p === null ? null : `${p >= 0 ? "+" : ""}${p}%`);
-  const revPct = fmtPct(overview.revenueMoMPct);
-  const ordPct = fmtPct(overview.ordersMoMPct);
+  // 30-day daily series for the KPI sparklines (real data).
+  const revSpark = salesSeries.month.map((b) => b.revenue);
+  const ordSpark = salesSeries.month.map((b) => b.count);
+  const profitSpark = revSpark.map((r, i) => r - (dailyExpenses[i] ?? 0));
+  const techTotals = techPerf.reduce(
+    (a, p) => ({ installs: a.installs + p.installs, sav: a.sav + p.sav, revenue: a.revenue + p.revenue, commission: a.commission + p.commission }),
+    { installs: 0, sav: 0, revenue: 0, commission: 0 },
+  );
+  const confTotals = confPerf.reduce(
+    (a, p) => ({ confirmed: a.confirmed + p.confirmed, cancelled: a.cancelled + p.cancelled, calls: a.calls + p.calls, whatsapp: a.whatsapp + p.whatsapp, revenue: a.revenue + p.revenue }),
+    { confirmed: 0, cancelled: 0, calls: 0, whatsapp: 0, revenue: 0 },
+  );
 
   const opCards = [
-    { icon: ShoppingBag, tone: "bg-brand-50 text-brand-600", label: t("admin.dash.kpiNewOrders"), value: String(overview.newOrdersToday), hint: t("admin.dash.kpiNewOrdersHint"), href: "/admin/orders" },
-    { icon: Clock, tone: "bg-amber-50 text-amber-600", label: t("admin.dash.kpiToConfirm"), value: String(overview.pending), hint: t("admin.dash.kpiToConfirmHint"), href: "/admin/orders?status=pending" },
-    { icon: Wrench, tone: "bg-indigo-50 text-indigo-600", label: t("admin.dash.kpiInstallsToday"), value: String(overview.installationsToday), hint: t("admin.dash.kpiInstallsHint"), href: "/admin/maintenance" },
-    { icon: Bell, tone: "bg-orange-50 text-orange-600", label: t("admin.dash.kpiSavDue"), value: String(overview.savDue), hint: t("admin.dash.kpiSavHint"), href: "/admin/maintenance" },
+    { icon: ShoppingBag, tone: "bg-brand-50 text-brand-600", glow: "bg-brand-400", label: t("admin.dash.kpiNewOrders"), value: String(overview.newOrdersToday), hint: t("admin.dash.kpiNewOrdersHint"), href: "/admin/orders", spark: orderActivity.newOrders, sparkColor: "var(--color-brand-500)" },
+    { icon: Clock, tone: "bg-amber-50 text-amber-600", glow: "bg-amber-400", label: t("admin.dash.kpiToConfirm"), value: String(overview.pending), hint: t("admin.dash.kpiToConfirmHint"), href: "/admin/orders?status=pending", spark: metricSeries.pending, sparkColor: "#f59e0b" },
+    { icon: Wrench, tone: "bg-indigo-50 text-indigo-600", glow: "bg-indigo-400", label: t("admin.dash.kpiInstallsToday"), value: String(overview.installationsToday), hint: t("admin.dash.kpiInstallsHint"), href: "/admin/orders?status=confirmed", spark: orderActivity.installs, sparkColor: "#6366f1" },
+    { icon: Bell, tone: "bg-orange-50 text-orange-600", glow: "bg-orange-400", label: t("admin.dash.kpiSavDue"), value: String(overview.savDue), hint: t("admin.dash.kpiSavHint"), href: "/admin/maintenance", spark: metricSeries.savDue, sparkColor: "#f97316" },
   ];
 
   const bizCards = [
-    { icon: Banknote, tone: "bg-emerald-50 text-emerald-600", label: t("admin.dash.kpiRevenueMonth"), value: formatMAD(overview.revenueThisMonth), hint: revPct ? t("admin.dash.vsLastMonth", { pct: revPct }) : "", href: "/admin/orders" },
-    { icon: ShoppingBag, tone: "bg-brand-50 text-brand-600", label: t("admin.dash.kpiOrdersMonth"), value: String(overview.ordersThisMonth), hint: ordPct ? t("admin.dash.vsLastMonth", { pct: ordPct }) : "", href: "/admin/orders" },
-    { icon: Package, tone: "bg-sky-50 text-sky-600", label: t("admin.dash.kpiStockTotal"), value: String(overview.stockTotal), hint: t("admin.dash.kpiStockHint"), href: "/admin/products" },
-    { icon: AlertTriangle, tone: "bg-rose-50 text-rose-600", label: t("admin.dash.kpiToReorder"), value: String(overview.lowStockCount), hint: t("admin.dash.kpiToReorderHint"), href: "/admin/products" },
+    { icon: Banknote, tone: "bg-emerald-50 text-emerald-600", glow: "bg-emerald-400", label: t("admin.dash.kpiRevenueMonth"), value: formatMAD(overview.revenueThisMonth), trend: overview.revenueMoMPct, href: "/admin/orders", spark: revSpark, sparkColor: "#10b981" },
+    { icon: TrendingUp, tone: "bg-brand-50 text-brand-600", glow: "bg-brand-400", label: t("admin.charges.kpiProfit"), value: formatMAD(finance.profitMonth), trend: finance.profitMoMPct, href: "/admin/charges", spark: profitSpark, sparkColor: "var(--color-brand-500)" },
+    { icon: Wallet, tone: "bg-rose-50 text-rose-600", glow: "bg-rose-400", label: t("admin.charges.kpiExpenses"), value: formatMAD(finance.expensesMonth), href: "/admin/charges", spark: dailyExpenses, sparkColor: "#f43f5e" },
+    { icon: ShoppingBag, tone: "bg-indigo-50 text-indigo-600", glow: "bg-indigo-400", label: t("admin.dash.kpiOrdersMonth"), value: String(overview.ordersThisMonth), trend: overview.ordersMoMPct, href: "/admin/orders", spark: ordSpark, sparkColor: "#6366f1" },
+    { icon: Package, tone: "bg-sky-50 text-sky-600", glow: "bg-sky-400", label: t("admin.dash.kpiStockTotal"), value: String(overview.stockTotal), hint: t("admin.dash.kpiStockHint"), href: "/admin/stock", spark: metricSeries.stockTotal, sparkColor: "#0ea5e9" },
+    { icon: AlertTriangle, tone: "bg-amber-50 text-amber-600", glow: "bg-amber-400", label: t("admin.dash.kpiToReorder"), value: String(overview.lowStockCount), hint: t("admin.dash.kpiToReorderHint"), href: "/admin/stock", spark: metricSeries.lowStockCount, sparkColor: "#f59e0b" },
   ];
 
   const confRows = [
-    { label: t("admin.dash.confReceived"), value: conf.received, dot: "bg-slate-400" },
-    { label: t("admin.dash.confConfirmed"), value: conf.confirmed, dot: "bg-emerald-500" },
-    { label: t("admin.dash.confCancelled"), value: conf.cancelled, dot: "bg-rose-500" },
-    { label: t("admin.dash.confNoAnswer"), value: conf.noAnswer, dot: "bg-amber-500" },
-    { label: t("admin.dash.confCallback"), value: conf.callback, dot: "bg-orange-500" },
-    { label: t("admin.dash.confUntreated"), value: conf.untreated, dot: "bg-slate-300" },
+    { label: t("admin.dash.confReceived"), value: conf.received, Icon: Inbox, tone: "bg-slate-100 text-slate-500" },
+    { label: t("admin.dash.confConfirmed"), value: conf.confirmed, Icon: Check, tone: "bg-emerald-50 text-emerald-600" },
+    { label: t("admin.dash.confCancelled"), value: conf.cancelled, Icon: X, tone: "bg-rose-50 text-rose-600" },
+    { label: t("admin.dash.confNoAnswer"), value: conf.noAnswer, Icon: PhoneOff, tone: "bg-amber-50 text-amber-600" },
+    { label: t("admin.dash.confCallback"), value: conf.callback, Icon: Clock, tone: "bg-violet-50 text-violet-600" },
+    { label: t("admin.dash.confUntreated"), value: conf.untreated, Icon: Minus, tone: "bg-slate-100 text-slate-400" },
   ];
-
-  const quick = [
-    { icon: Users, label: t("admin.dash.quickActiveClients"), value: String(overview.activeClients) },
-    { icon: Wrench, label: t("admin.dash.quickInstalled"), value: String(overview.installedDevices) },
-    { icon: Wallet, label: t("admin.dash.quickRevenueTotal"), value: formatMAD(overview.revenueTotal) },
-    { icon: HardHat, label: t("admin.dash.quickTechnicians"), value: String(overview.technicians) },
+  const taskRows = [
+    { label: t("admin.dash.tasksToCall"), value: conf.toCall, Icon: Phone, tone: "bg-emerald-50 text-emerald-600" },
+    { label: t("admin.dash.tasksToCallback"), value: conf.toCallback, Icon: Clock, tone: "bg-amber-50 text-amber-600" },
+    { label: t("admin.dash.tasksNoReply"), value: conf.noReply, Icon: PhoneMissed, tone: "bg-rose-50 text-rose-600" },
   ];
 
   return (
-    <div>
+    <IconProvider>
+    <div className="font-semibold">
       <div className="mb-6">
         <h1 className="font-display text-2xl font-bold text-ink">{t("admin.dash.title")}</h1>
         <p className="text-sm text-ink-soft">{t("admin.dash.subtitle")}</p>
@@ -98,296 +131,349 @@ export default async function AdminDashboard() {
       </div>
 
       {/* Business KPIs (this month) */}
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {bizCards.map((c) => (
           <KpiCard key={c.label} {...c} />
         ))}
       </div>
 
-      {/* Sales chart */}
-      <div className="mt-6">
+      {/* Sales chart + Confirmation today — split 50/50 */}
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <SalesChart series={salesSeries} />
+        <Card className="gap-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-sm ring-0">
+          <CardHeader className="px-5 pt-5">
+            <CardTitle className="font-display font-bold text-ink">{t("admin.dash.confTitle")}</CardTitle>
+          </CardHeader>
+          <CardContent className="px-5 pb-5 pt-4">
+            <div className="flex flex-col gap-5 sm:flex-row">
+            {/* Left: status breakdown (left) + donut (middle) */}
+            <div className="flex flex-1 items-center gap-4">
+              <div className="min-w-0 flex-1">
+              <Table>
+                <TableBody>
+                  {confRows.map((r) => (
+                    <TableRow key={r.label} className="border-0 hover:bg-transparent">
+                      <TableCell className="px-0 py-1.5">
+                        <span className="flex items-center gap-2.5 font-semibold text-ink">
+                          <Badge className={cn("h-7 w-7 justify-center rounded-lg p-0", r.tone)}>
+                            <r.Icon className="h-4 w-4" />
+                          </Badge>
+                          {r.label}
+                        </span>
+                      </TableCell>
+                      <TableCell className="px-0 py-1.5 text-end font-extrabold text-ink">{r.value}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              </div>
+              <div className="relative h-40 w-40 shrink-0">
+                <ConfirmationDonut rate={conf.rate} label={t("admin.dash.confRate")} />
+              </div>
+            </div>
+
+            {/* Right: Tâches restantes — shadcn Table + footer total, beside the status */}
+            <div className="flex flex-col sm:w-[42%] sm:shrink-0 sm:border-s sm:border-slate-100 sm:ps-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                {t("admin.dash.tasksTitle")}
+              </p>
+              <Table>
+                <TableBody>
+                  {taskRows.map((r) => (
+                    <TableRow key={r.label} className="border-0 hover:bg-transparent">
+                      <TableCell className="px-0 py-1.5">
+                        <span className="flex items-center gap-2.5 font-semibold text-ink">
+                          <Badge className={cn("h-7 w-7 justify-center rounded-lg p-0", r.tone)}>
+                            <r.Icon className="h-4 w-4" />
+                          </Badge>
+                          {r.label}
+                        </span>
+                      </TableCell>
+                      <TableCell className="px-0 py-1.5 text-end font-extrabold text-ink">{r.value}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+                <TableFooter className="border-0 bg-transparent">
+                  <TableRow className="border-0 hover:bg-transparent">
+                    <TableCell className="px-0 py-2">
+                      <Badge className="rounded-md bg-brand-50 px-2.5 py-1 text-sm font-semibold text-brand-800">
+                        {t("admin.dash.tasksTotal")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="px-0 py-2 text-end font-display text-lg font-extrabold text-brand-700">
+                      {conf.totalRemaining}
+                    </TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            </div>
+          </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Confirmation today + Activity feed */}
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 font-display font-bold text-ink">{t("admin.dash.confTitle")}</h2>
-          <div className="flex items-center gap-5">
-            <div className="relative h-32 w-32 shrink-0">
-              <svg viewBox="0 0 120 120" className="h-32 w-32 text-brand-500">
-                <circle cx="60" cy="60" r="48" fill="none" stroke="#f1f5f9" strokeWidth="12" />
-                <circle
-                  cx="60"
-                  cy="60"
-                  r="48"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="12"
-                  strokeLinecap="round"
-                  strokeDasharray={`${(conf.rate / 100) * RING} ${RING}`}
-                  transform="rotate(-90 60 60)"
-                />
-                <text x="60" y="58" textAnchor="middle" className="fill-ink font-bold" fontSize="22">
-                  {conf.rate}%
-                </text>
-                <text x="60" y="74" textAnchor="middle" className="fill-slate-400" fontSize="9">
-                  {t("admin.dash.confRate")}
-                </text>
-              </svg>
-            </div>
-            <ul className="flex-1 space-y-1.5 text-sm">
-              {confRows.map((r) => (
-                <li key={r.label} className="flex items-center justify-between gap-2">
-                  <span className="flex items-center gap-2 text-ink-soft">
-                    <span className={`h-2.5 w-2.5 rounded-full ${r.dot}`} /> {r.label}
-                  </span>
-                  <span className="font-semibold text-ink">{r.value}</span>
-                </li>
-              ))}
-            </ul>
+      {/* Recent orders (2/3) + Activity feed (1/3) */}
+      <div className="mt-6 grid gap-6 xl:grid-cols-3">
+        <Card className="gap-0 overflow-hidden rounded-2xl p-0 xl:col-span-2">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 px-5 py-4">
+            <CardTitle className="font-display font-bold text-ink">{t("admin.dash.recentOrders")}</CardTitle>
+            <Link href="/admin/orders" className="flex items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-700">
+              {t("admin.dash.seeAll")} <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          </CardHeader>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="text-xs uppercase tracking-wide text-ink-soft">
+                  <TableHead>{t("admin.dash.thOrder")}</TableHead>
+                  <TableHead>{t("admin.dash.thCustomer")}</TableHead>
+                  <TableHead>{t("admin.dash.thTotal")}</TableHead>
+                  <TableHead>{t("admin.dash.thStatus")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recent.map((o) => (
+                  <TableRow key={o.id} className="hover:bg-slate-50">
+                    <TableCell>
+                      <Link href={`/admin/orders/${o.id}`} className="font-semibold text-brand-700 hover:underline">
+                        {o.id}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <p className="font-semibold text-ink" dir="auto">{o.customerName}</p>
+                      <p className="text-xs text-ink-soft" dir="auto">{o.city}</p>
+                    </TableCell>
+                    <TableCell className="font-semibold text-ink">{formatMAD(o.total)}</TableCell>
+                    <TableCell>
+                      <StatusBadge status={o.status} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
-        </div>
+        </Card>
 
         <ActivityFeed items={activity} />
       </div>
 
-      {/* Recent orders + Technician performance */}
+      {/* Technician performance + Confirmation performance (1/2 each) */}
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-            <h2 className="font-display font-bold text-ink">{t("admin.dash.recentOrders")}</h2>
-            <Link href="/admin/orders" className="flex items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-700">
-              {t("admin.dash.seeAll")} <ArrowUpRight className="h-4 w-4" />
-            </Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="text-xs uppercase tracking-wide text-ink-soft">
-                  <th className="px-5 py-3 font-semibold">{t("admin.dash.thOrder")}</th>
-                  <th className="px-5 py-3 font-semibold">{t("admin.dash.thCustomer")}</th>
-                  <th className="px-5 py-3 font-semibold">{t("admin.dash.thTotal")}</th>
-                  <th className="px-5 py-3 font-semibold">{t("admin.dash.thStatus")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map((o) => (
-                  <tr key={o.id} className="border-t border-slate-100 transition-colors hover:bg-slate-50">
-                    <td className="px-5 py-3">
-                      <Link href={`/admin/orders/${o.id}`} className="font-semibold text-brand-700 hover:underline">
-                        {o.id}
-                      </Link>
-                    </td>
-                    <td className="px-5 py-3">
-                      <p className="font-medium text-ink" dir="auto">{o.customerName}</p>
-                      <p className="text-xs text-ink-soft" dir="auto">{o.city}</p>
-                    </td>
-                    <td className="px-5 py-3 font-semibold text-ink">{formatMAD(o.total)}</td>
-                    <td className="px-5 py-3">
-                      <StatusBadge status={o.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center gap-2 border-b border-slate-200 px-5 py-4">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+        <Card className="gap-0 overflow-hidden rounded-2xl p-0">
+          <CardHeader className="flex flex-row items-center gap-2 border-b border-slate-200 px-5 py-4">
+            <Badge className="h-8 w-8 justify-center rounded-lg bg-indigo-50 p-0 text-indigo-600">
               <HardHat className="h-4 w-4" />
-            </span>
-            <h2 className="font-display font-bold text-ink">{t("admin.dash.techTitle")}</h2>
-          </div>
+            </Badge>
+            <CardTitle className="font-display font-bold text-ink">{t("admin.dash.techTitle")}</CardTitle>
+          </CardHeader>
           {techPerf.length === 0 ? (
             <p className="px-5 py-12 text-center text-sm text-ink-soft">{t("admin.dash.techEmpty")}</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="text-xs uppercase tracking-wide text-ink-soft">
-                    <th className="px-5 py-3 font-semibold">{t("admin.dash.techName")}</th>
-                    <th className="px-5 py-3 font-semibold">{t("admin.dash.techInstalls")}</th>
-                    <th className="px-5 py-3 font-semibold">{t("admin.dash.techSav")}</th>
-                    <th className="px-5 py-3 font-semibold">{t("admin.dash.techRevenue")}</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow className="text-xs uppercase tracking-wide text-ink-soft">
+                    <TableHead>{t("admin.dash.techName")}</TableHead>
+                    <TableHead>{t("admin.dash.techInstalls")}</TableHead>
+                    <TableHead>{t("admin.dash.techSav")}</TableHead>
+                    <TableHead>{t("admin.dash.techRevenue")}</TableHead>
+                    <TableHead>{t("admin.dash.techCommission")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {techPerf.map((p) => (
-                    <tr key={p.email} className="border-t border-slate-100">
-                      <td className="px-5 py-3 font-medium text-ink" dir="auto">{p.name}</td>
-                      <td className="px-5 py-3 text-ink">{p.installs}</td>
-                      <td className="px-5 py-3 text-ink">{p.sav}</td>
-                      <td className="px-5 py-3 font-semibold text-ink">{formatMAD(p.revenue)}</td>
-                    </tr>
+                    <TableRow key={p.email}>
+                      <TableCell dir="auto">
+                        <span className="flex items-center gap-2">
+                          <Avatar className="size-7">
+                            <AvatarFallback className="bg-indigo-100 text-xs font-bold text-indigo-700">{p.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <span className="font-semibold text-ink">{p.name}</span>
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-ink">{p.installs}</TableCell>
+                      <TableCell className="text-ink">{p.sav}</TableCell>
+                      <TableCell className="font-semibold text-ink">{formatMAD(p.revenue)}</TableCell>
+                      <TableCell className="font-semibold text-ink">{formatMAD(p.commission)}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+                <TableFooter>
+                  <TableRow className="font-semibold text-ink">
+                    <TableCell>{t("admin.dash.total")}</TableCell>
+                    <TableCell>{techTotals.installs}</TableCell>
+                    <TableCell>{techTotals.sav}</TableCell>
+                    <TableCell>{formatMAD(techTotals.revenue)}</TableCell>
+                    <TableCell>{formatMAD(techTotals.commission)}</TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
             </div>
           )}
-        </div>
-      </div>
+        </Card>
 
-      {/* Orders by status */}
-      <div className="mt-6">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-display font-bold text-ink">{t("admin.dash.ordersByStatus")}</h2>
-          <Link href="/admin/orders" className="flex items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-700">
-            {t("admin.dash.seeAll")} <ArrowUpRight className="h-4 w-4" />
-          </Link>
-        </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {STATUS_ORDER.map((st) => {
-            const meta = STATUS_META[st];
-            return (
-              <Link
-                key={st}
-                href={`/admin/orders?status=${st}`}
-                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
-              >
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${meta.className}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
-                  {t(`status.${st}`)}
-                </span>
-                <p className="mt-3 font-display text-2xl font-extrabold text-ink">{overview.byStatus[st] ?? 0}</p>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Low stock + Top sellers */}
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-            <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-                <Package className="h-4 w-4" />
-              </span>
-              <h2 className="font-display font-bold text-ink">{t("admin.dash.lowStock")}</h2>
+        <Card className="gap-0 overflow-hidden rounded-2xl p-0">
+          <CardHeader className="flex flex-row items-center gap-2 border-b border-slate-200 px-5 py-4">
+            <Badge className="h-8 w-8 justify-center rounded-lg bg-emerald-50 p-0 text-emerald-600">
+              <Headphones className="h-4 w-4" />
+            </Badge>
+            <CardTitle className="font-display font-bold text-ink">{t("admin.dash.confPerfTitle")}</CardTitle>
+          </CardHeader>
+          {confPerf.length === 0 ? (
+            <p className="px-5 py-12 text-center text-sm text-ink-soft">{t("admin.dash.cpEmpty")}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="text-xs uppercase tracking-wide text-ink-soft">
+                    <TableHead>{t("admin.dash.cpName")}</TableHead>
+                    <TableHead>{t("admin.dash.cpConfirmed")}</TableHead>
+                    <TableHead>{t("admin.dash.cpCancelled")}</TableHead>
+                    <TableHead>{t("admin.dash.cpCalls")}</TableHead>
+                    <TableHead>{t("admin.dash.cpWhatsapp")}</TableHead>
+                    <TableHead>{t("admin.dash.cpRate")}</TableHead>
+                    <TableHead>{t("admin.dash.cpRevenue")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {confPerf.map((p) => (
+                    <TableRow key={p.email}>
+                      <TableCell dir="auto">
+                        <span className="flex items-center gap-2">
+                          <Avatar className="size-7">
+                            <AvatarFallback className="bg-emerald-100 text-xs font-bold text-emerald-700">{p.name.charAt(0)}</AvatarFallback>
+                          </Avatar>
+                          <span className="font-semibold text-ink">{p.name}</span>
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-ink">{p.confirmed}</TableCell>
+                      <TableCell className="text-ink">{p.cancelled}</TableCell>
+                      <TableCell className="text-ink">{p.calls}</TableCell>
+                      <TableCell className="text-ink">{p.whatsapp}</TableCell>
+                      <TableCell className="font-semibold text-ink">{p.rate}%</TableCell>
+                      <TableCell className="font-semibold text-ink">{formatMAD(p.revenue)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+                <TableFooter>
+                  <TableRow className="font-semibold text-ink">
+                    <TableCell>{t("admin.dash.total")}</TableCell>
+                    <TableCell>{confTotals.confirmed}</TableCell>
+                    <TableCell>{confTotals.cancelled}</TableCell>
+                    <TableCell>{confTotals.calls}</TableCell>
+                    <TableCell>{confTotals.whatsapp}</TableCell>
+                    <TableCell />
+                    <TableCell>{formatMAD(confTotals.revenue)}</TableCell>
+                  </TableRow>
+                </TableFooter>
+              </Table>
             </div>
-            <Link href="/admin/products" className="text-sm font-semibold text-brand-600 hover:text-brand-700">
+          )}
+        </Card>
+      </div>
+
+      {/* Low stock + Top sellers (1/2 each) */}
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Card className="gap-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-sm ring-0">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 px-5 py-4">
+            <div className="flex items-center gap-2">
+              <Badge className="h-8 w-8 justify-center rounded-lg bg-amber-50 p-0 text-amber-600">
+                <Package className="h-4 w-4" />
+              </Badge>
+              <CardTitle className="font-display font-bold text-ink">{t("admin.dash.lowStock")}</CardTitle>
+            </div>
+            <Link href="/admin/stock" className="text-sm font-semibold text-brand-600 hover:text-brand-700">
               {t("admin.dash.manageInventory")}
             </Link>
-          </div>
+          </CardHeader>
           {lowStock.length === 0 ? (
             <p className="px-5 py-12 text-center text-sm text-ink-soft">{t("admin.dash.stockOk")}</p>
           ) : (
-            <div className="divide-y divide-slate-100">
-              {lowStock.map((p) => (
-                <Link
-                  key={p.id}
-                  href={`/admin/products/${p.id}/edit`}
-                  className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-slate-50"
-                >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                    <Package className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p dir="auto" className="line-clamp-1 text-sm font-medium text-ink">{p.name}</p>
-                    <p className="text-xs text-ink-soft">{t(`cat.${p.categorySlug}.name`)}</p>
-                  </div>
-                  <span
-                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${
-                      p.stock <= 2 ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-700"
-                    }`}
-                  >
-                    {p.stock > 1
-                      ? t("admin.dash.stockRemainingPlural", { n: p.stock })
-                      : t("admin.dash.stockRemaining", { n: p.stock })}
-                  </span>
-                </Link>
-              ))}
-            </div>
+            <Table>
+              <TableBody>
+                {lowStock.map((p) => (
+                  <TableRow key={p.id} className="border-0 hover:bg-slate-50">
+                    <TableCell className="py-3 ps-5">
+                      <Link href={`/admin/products/${p.id}/edit`} className="flex items-center gap-3">
+                        <Badge className="h-9 w-9 shrink-0 justify-center rounded-lg bg-slate-100 p-0 text-slate-500">
+                          <Package className="h-4 w-4" />
+                        </Badge>
+                        <span className="min-w-0">
+                          <span dir="auto" className="line-clamp-1 block text-sm font-semibold text-ink">{p.name}</span>
+                          <span className="block text-xs text-ink-soft">{t(`cat.${p.categorySlug}.name`)}</span>
+                        </span>
+                      </Link>
+                    </TableCell>
+                    <TableCell className="py-3 pe-5 text-end">
+                      <Badge
+                        className={cn(
+                          "px-2.5 py-1 text-xs font-bold",
+                          p.stock <= 2 ? "bg-rose-50 text-rose-600" : "bg-amber-50 text-amber-700",
+                        )}
+                      >
+                        {p.stock > 1
+                          ? t("admin.dash.stockRemainingPlural", { n: p.stock })
+                          : t("admin.dash.stockRemaining", { n: p.stock })}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
-        </div>
+        </Card>
 
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <Card className="gap-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-sm ring-0">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 px-5 py-4">
             <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
+              <Badge className="h-8 w-8 justify-center rounded-lg bg-brand-50 p-0 text-brand-600">
                 <TrendingUp className="h-4 w-4" />
-              </span>
-              <h2 className="font-display font-bold text-ink">{t("admin.dash.topSellers")}</h2>
+              </Badge>
+              <CardTitle className="font-display font-bold text-ink">{t("admin.dash.topSellers")}</CardTitle>
             </div>
             <Link href="/admin/products" className="text-sm font-semibold text-brand-600 hover:text-brand-700">
               {t("admin.dash.products")}
             </Link>
-          </div>
+          </CardHeader>
           {topSellers.length === 0 ? (
             <p className="px-5 py-12 text-center text-sm text-ink-soft">{t("admin.dash.noSalesYet")}</p>
           ) : (
-            <div className="space-y-4 px-5 py-5">
-              {topSellers.map((p, i) => {
-                const max = topSellers[0].units || 1;
-                const pct = Math.max(6, Math.round((p.units / max) * 100));
-                return (
-                  <div key={p.name}>
-                    <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
-                      <span dir="auto" className="line-clamp-1 font-medium text-ink">
-                        <span className="text-ink-soft">{i + 1}.</span> {p.name}
-                      </span>
-                      <span className="shrink-0 text-xs font-semibold text-ink-soft">
+            <Table>
+              <TableBody>
+                {topSellers.map((p, i) => {
+                  const max = topSellers[0].units || 1;
+                  const pct = Math.max(6, Math.round((p.units / max) * 100));
+                  return (
+                    <TableRow key={p.name} className="border-0 hover:bg-transparent">
+                      <TableCell className="py-3 ps-5">
+                        <span dir="auto" className="line-clamp-1 text-sm font-semibold text-ink">
+                          <span className="text-ink-soft">{i + 1}.</span> {p.name}
+                        </span>
+                      </TableCell>
+                      <TableCell className="w-[45%] py-3">
+                        <Progress
+                          value={pct}
+                          className="block w-full [&_[data-slot=progress-indicator]]:bg-gradient-to-r [&_[data-slot=progress-indicator]]:from-brand-500 [&_[data-slot=progress-indicator]]:to-aqua-400 [&_[data-slot=progress-track]]:h-2 [&_[data-slot=progress-track]]:bg-slate-100"
+                        />
+                      </TableCell>
+                      <TableCell className="py-3 pe-5 text-end text-xs font-semibold whitespace-nowrap text-ink-soft">
                         {p.units > 1 ? t("admin.dash.unitsPlural", { n: p.units }) : t("admin.dash.units", { n: p.units })}
-                      </span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                      <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-aqua-400" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           )}
-        </div>
+        </Card>
       </div>
 
-      {/* Quick info */}
-      <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {quick.map((q) => (
-          <div key={q.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-ink-soft">
-              <q.icon className="h-4 w-4" />
-              <span className="text-xs">{q.label}</span>
-            </div>
-            <p className="mt-2 font-display text-xl font-extrabold text-ink">{q.value}</p>
-          </div>
-        ))}
+      {/* Upcoming jobs agenda + Factures (generate from an order) — 50/50 */}
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <AgendaTimeline items={upcomingJobs} />
+        <FacturesCard invoiceable={invoiceableOrders} recent={recentInvoices} />
       </div>
     </div>
-  );
-}
-
-function KpiCard({
-  icon: Icon,
-  tone,
-  label,
-  value,
-  hint,
-  href,
-}: {
-  icon: typeof ShoppingBag;
-  tone: string;
-  label: string;
-  value: string;
-  hint: string;
-  href: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-colors hover:border-brand-200 hover:bg-brand-50/30"
-    >
-      <div className="flex items-center justify-between">
-        <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${tone}`}>
-          <Icon className="h-5 w-5" />
-        </div>
-        {hint && <span className="text-xs text-ink-soft">{hint}</span>}
-      </div>
-      <p className="mt-4 font-display text-2xl font-extrabold text-ink">{value}</p>
-      <p className="text-sm text-ink-soft">{label}</p>
-    </Link>
+    </IconProvider>
   );
 }

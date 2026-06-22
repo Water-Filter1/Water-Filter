@@ -19,21 +19,6 @@ export const STATUS_META: Record<
     className: "bg-teal-100 text-teal-700",
     dot: "bg-teal-500",
   },
-  shipped: {
-    label: "Expédiée",
-    className: "bg-indigo-100 text-indigo-700",
-    dot: "bg-indigo-500",
-  },
-  delivered: {
-    label: "Livrée",
-    className: "bg-emerald-100 text-emerald-700",
-    dot: "bg-emerald-500",
-  },
-  returned: {
-    label: "Retournée",
-    className: "bg-orange-100 text-orange-700",
-    dot: "bg-orange-500",
-  },
   cancelled: {
     label: "Annulée",
     className: "bg-rose-100 text-rose-700",
@@ -41,8 +26,6 @@ export const STATUS_META: Record<
   },
 };
 
-// Only the statuses actually used by the install flow are shown in the UI.
-// (shipped / delivered / returned stay in the type for safety but are never set.)
 export const STATUS_ORDER: OrderStatus[] = [
   "pending",
   "confirmed",

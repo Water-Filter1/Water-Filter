@@ -9,7 +9,6 @@ import {
   UserPlus,
   UserX,
   Wallet,
-  Search,
   Eye,
   Phone,
   MessageCircle,
@@ -24,32 +23,23 @@ import {
   Mail,
 } from "lucide-react";
 import { useI18n } from "@/i18n/i18n-context";
-import { formatMAD, formatDate, cn } from "@/lib/utils";
+import { formatMAD, formatDate, cn, waNumber } from "@/lib/utils";
 import {
   getClientDetailAction,
   setClientStatusAction,
   updateClientAction,
 } from "@/lib/client-actions";
 import type { ClientRow, ClientSegments, ClientDetail } from "@/lib/data";
+import { STATUS_META } from "@/lib/order-status";
+import { KpiCard } from "@/components/admin/kpi-card";
+import { SearchInput } from "@/components/admin/search-input";
+import { Card } from "@/components/ui/card";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 
 const PAGE = 10;
 type Tab = "all" | "withOrders" | "newMonth" | "inactive";
 
 const CITY_COLORS = ["#3b82f6", "#22c55e", "#14b8a6", "#f59e0b", "#ef4444"];
-
-const ORDER_STATUS_STYLE: Record<string, string> = {
-  pending: "bg-amber-100 text-amber-700",
-  confirmed: "bg-sky-100 text-sky-700",
-  installed: "bg-emerald-100 text-emerald-700",
-  cancelled: "bg-rose-100 text-rose-600",
-};
-
-function waNumber(phone: string): string {
-  const d = phone.replace(/\D/g, "");
-  if (d.startsWith("212")) return d;
-  if (d.startsWith("0")) return "212" + d.slice(1);
-  return d;
-}
 
 const shortId = (id: string) => "#CLT-" + id.slice(-6).toUpperCase();
 const startOfMonth = () => {
@@ -135,14 +125,7 @@ export function ClientsManager({
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         {KPIS.map((k) => (
-          <div key={k.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${k.tone}`}>
-              <k.icon className="h-5 w-5" />
-            </div>
-            <p className="mt-3 font-display text-2xl font-extrabold text-ink">{k.value}</p>
-            <p className="text-sm font-medium text-ink">{k.label}</p>
-            <p className="text-xs text-ink-soft">{k.hint}</p>
-          </div>
+          <KpiCard key={k.label} icon={k.icon} tone={k.tone} label={k.label} value={k.value} hint={k.hint} />
         ))}
       </div>
 
@@ -163,59 +146,56 @@ export function ClientsManager({
             </button>
           ))}
         </div>
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft" />
-          <input
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setPage(1);
-            }}
-            placeholder={t("admin.crm.searchPlaceholder")}
-            className="h-11 w-full rounded-xl border border-slate-200 bg-white ps-10 pe-4 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-100"
-          />
-        </div>
+        <SearchInput
+          value={q}
+          onChange={(v) => {
+            setQ(v);
+            setPage(1);
+          }}
+          placeholder={t("admin.crm.searchPlaceholder")}
+          className="w-full sm:w-80"
+        />
       </div>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <Card className="gap-0 overflow-hidden p-0">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-ink-soft">
-                <th className="px-4 py-3 font-semibold">{t("admin.crm.thId")}</th>
-                <th className="px-4 py-3 font-semibold">{t("admin.crm.thName")}</th>
-                <th className="px-4 py-3 font-semibold">{t("admin.crm.thPhone")}</th>
-                <th className="px-4 py-3 font-semibold">{t("admin.crm.thCity")}</th>
-                <th className="px-4 py-3 font-semibold">{t("admin.crm.thOrders")}</th>
-                <th className="px-4 py-3 font-semibold">{t("admin.crm.thSpent")}</th>
-                <th className="px-4 py-3 font-semibold">{t("admin.crm.thLastOrder")}</th>
-                <th className="px-4 py-3 font-semibold">{t("admin.crm.thStatus")}</th>
-                <th className="px-4 py-3 font-semibold text-end">{t("admin.crm.thActions")}</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="min-w-[820px]">
+            <TableHeader>
+              <TableRow className="text-xs uppercase tracking-wide text-ink-soft">
+                <TableHead>{t("admin.crm.thId")}</TableHead>
+                <TableHead>{t("admin.crm.thName")}</TableHead>
+                <TableHead>{t("admin.crm.thPhone")}</TableHead>
+                <TableHead>{t("admin.crm.thCity")}</TableHead>
+                <TableHead>{t("admin.crm.thOrders")}</TableHead>
+                <TableHead>{t("admin.crm.thSpent")}</TableHead>
+                <TableHead>{t("admin.crm.thLastOrder")}</TableHead>
+                <TableHead>{t("admin.crm.thStatus")}</TableHead>
+                <TableHead className="text-end">{t("admin.crm.thActions")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-4 py-16 text-center text-ink-soft">
+                <TableRow>
+                  <TableCell colSpan={9} className="py-16 text-center text-ink-soft">
                     {t("admin.crm.empty")}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ) : (
                 rows.map((c) => (
-                  <tr
+                  <TableRow
                     key={c.id}
                     onClick={() => openDetail(c.phone)}
-                    className="cursor-pointer border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50"
+                    className="cursor-pointer hover:bg-slate-50"
                   >
-                    <td className="px-4 py-3 font-mono text-xs text-brand-700">{shortId(c.id)}</td>
-                    <td className="px-4 py-3 font-medium text-ink" dir="auto">{c.name}</td>
-                    <td className="px-4 py-3 text-ink-soft" dir="ltr">{c.phone}</td>
-                    <td className="px-4 py-3 text-ink-soft" dir="auto">{c.city || "—"}</td>
-                    <td className="px-4 py-3 font-semibold text-ink">{c.orderCount}</td>
-                    <td className="px-4 py-3 font-semibold text-ink">{formatMAD(c.totalSpent)}</td>
-                    <td className="px-4 py-3 text-ink-soft">{c.lastOrderAt ? formatDate(c.lastOrderAt) : "—"}</td>
-                    <td className="px-4 py-3">
+                    <TableCell className="font-mono text-xs text-brand-700">{shortId(c.id)}</TableCell>
+                    <TableCell className="font-medium text-ink" dir="auto">{c.name}</TableCell>
+                    <TableCell className="text-ink-soft" dir="ltr">{c.phone}</TableCell>
+                    <TableCell className="text-ink-soft" dir="auto">{c.city || "—"}</TableCell>
+                    <TableCell className="font-semibold text-ink">{c.orderCount}</TableCell>
+                    <TableCell className="font-semibold text-ink">{formatMAD(c.totalSpent)}</TableCell>
+                    <TableCell className="text-ink-soft">{c.lastOrderAt ? formatDate(c.lastOrderAt) : "—"}</TableCell>
+                    <TableCell>
                       <span
                         className={cn(
                           "rounded-full px-2.5 py-0.5 text-xs font-semibold",
@@ -224,8 +204,8 @@ export function ClientsManager({
                       >
                         {c.status === "active" ? t("admin.crm.statusActive") : t("admin.crm.statusInactive")}
                       </span>
-                    </td>
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    </TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => openDetail(c.phone)}
@@ -251,12 +231,12 @@ export function ClientsManager({
                           <MessageCircle className="h-4 w-4" />
                         </a>
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))
               )}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
 
         {/* Pagination */}
@@ -284,7 +264,7 @@ export function ClientsManager({
             </button>
           </div>
         </div>
-      </div>
+      </Card>
 
       {/* Bottom widgets */}
       <div className="grid gap-6 lg:grid-cols-3">
@@ -492,7 +472,7 @@ function ClientDetailPanel({
                         <span className="font-semibold text-brand-700">{o.id}</span>
                         <span className="text-ink-soft">{formatDate(o.createdAt)}</span>
                         <span className="font-medium text-ink">{formatMAD(o.total)}</span>
-                        <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", ORDER_STATUS_STYLE[o.status] ?? "bg-slate-100 text-ink-soft")}>
+                        <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", (STATUS_META as Record<string, { className: string }>)[o.status]?.className ?? "bg-slate-100 text-ink-soft")}>
                           {t(`status.${o.status}`)}
                         </span>
                       </Link>

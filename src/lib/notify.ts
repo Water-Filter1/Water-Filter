@@ -21,7 +21,7 @@ function brandHeader(logoUrl: string | null, siteName: string): string {
 }
 
 /** Builds the branded order-alert email. Pure (no DB). */
-export function buildOrderEmail(
+function buildOrderEmail(
   order: Order,
   opts: { logoUrl: string | null; siteName: string; appUrl: string },
 ): { subject: string; html: string } {

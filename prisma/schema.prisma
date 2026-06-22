@@ -53,6 +53,7 @@ model Order {
   confirmationNote String?
   source           String    @default("web") // "web" | "phone"
   confirmedAt      DateTime?
+  confirmedBy      String? // confirmateur email who confirmed / cancelled (for performance)
   installDate      DateTime? // scheduled installation date/time
   assignedTo       String? // plombier email the job is assigned to
   completedAt      DateTime? // when the plombier marked it installed
@@ -72,6 +73,7 @@ model Order {
   @@index([assignedTo])
   @@index([kind])
   @@index([nextMaintenanceAt])
+  @@index([confirmedBy])
 }
 
 model AdminUser {
@@ -81,6 +83,7 @@ model AdminUser {
   name         String?
   role         String   @default("admin") // "admin" | "confirmateur" | "plombier"
   city         String? // plombier coverage city/zone (for dispatch)
+  commissionPerInstall Int @default(0) // MAD paid to this technician per completed install
   createdAt    DateTime @default(now())
 }
 
@@ -119,6 +122,36 @@ model SiteSettings {
   freeDeliveryThreshold  Int      @default(1000)
   deliveryFee            Int      @default(40)
   updatedAt              DateTime @updatedAt
+}
+
+// A customer facture (sales receipt). Generated from an order; data is SNAPSHOT at
+// issue time so later edits to the order never change an issued facture. No TVA — the
+// business issues a simple receipt (items + delivery + one total, paid on delivery).
+model Invoice {
+  id              String   @id @default(cuid())
+  number          Int      @unique // global sequential value from InvoiceCounter
+  ref             String   @unique // display reference, e.g. "FAC-00001"
+  orderId         String?  @unique // source order — one facture per order (DB-enforced)
+  customerName    String
+  customerPhone   String   @default("")
+  customerCity    String   @default("")
+  customerAddress String   @default("")
+  items           Json     @default("[]") // snapshot: [{ name, qty, price, total }]
+  subtotal        Int      @default(0) // sum of line totals
+  deliveryFee     Int      @default(0) // total - subtotal (delivery / adjustment)
+  total           Int      @default(0) // grand total the client pays
+  status          String   @default("issued") // "issued" | "cancelled"
+  note            String?
+  issuedBy        String? // admin email who generated it
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Single-row counter for gap-free sequential invoice numbers (atomic increment).
+model InvoiceCounter {
+  id   String @id @default("default")
+  next Int    @default(0)
 }
 
 model Review {
@@ -166,4 +199,33 @@ model ActivityLog {
 
   @@index([createdAt])
   @@index([action])
+}
+
+// Daily snapshot of point-in-time metrics (stock, queues, clients) so the dashboard
+// KPI cards can show a real trend over time. One row per day, upserted on dashboard load.
+model MetricSnapshot {
+  id               String   @id @default(cuid())
+  day              DateTime @unique // midnight (local) of the snapshot day
+  stockTotal       Int      @default(0)
+  lowStockCount    Int      @default(0)
+  pending          Int      @default(0)
+  savDue           Int      @default(0)
+  activeClients    Int      @default(0)
+  installedDevices Int      @default(0)
+  technicians      Int      @default(0)
+  createdAt        DateTime @default(now())
+}
+
+// Business expenses — so the dashboard can show real Dépenses and Profit net.
+model Expense {
+  id        String   @id @default(cuid())
+  label     String
+  category  String   @default("other") // "stock" | "ads" | "rent" | "salary" | "delivery" | "other"
+  amount    Int // MAD
+  note      String?
+  date      DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([date])
+  @@index([category])
 }

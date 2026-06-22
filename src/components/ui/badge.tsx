@@ -1,14 +1,23 @@
+import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
-type Tone = "sale" | "best" | "new" | "neutral" | "success";
+export const badgeVariants = cva(
+  "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+  {
+    variants: {
+      tone: {
+        sale: "bg-rose-50 text-rose-600",
+        best: "bg-amber-50 text-amber-700",
+        new: "bg-brand-50 text-brand-700",
+        neutral: "bg-neutral-100 text-neutral-600",
+        success: "bg-emerald-50 text-emerald-700",
+      },
+    },
+    defaultVariants: { tone: "neutral" },
+  },
+);
 
-const tones: Record<Tone, string> = {
-  sale: "bg-rose-50 text-rose-600",
-  best: "bg-amber-50 text-amber-700",
-  new: "bg-brand-50 text-brand-700",
-  neutral: "bg-neutral-100 text-neutral-600",
-  success: "bg-emerald-50 text-emerald-700",
-};
+type Tone = NonNullable<VariantProps<typeof badgeVariants>["tone"]>;
 
 /** Map a French badge label to a visual tone. */
 export function toneForBadge(label: string): Tone {
@@ -21,22 +30,12 @@ export function toneForBadge(label: string): Tone {
 
 export function Badge({
   children,
-  tone = "neutral",
+  tone,
   className,
 }: {
   children: React.ReactNode;
   tone?: Tone;
   className?: string;
 }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
-        tones[tone],
-        className,
-      )}
-    >
-      {children}
-    </span>
-  );
+  return <span className={cn(badgeVariants({ tone }), className)}>{children}</span>;
 }

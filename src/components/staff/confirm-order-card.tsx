@@ -12,17 +12,10 @@ import {
   PhoneOff,
   X,
 } from "lucide-react";
-import { confirmOrderAction, recordCallOutcomeAction } from "@/lib/order-actions";
-import { formatMAD, formatDate } from "@/lib/utils";
+import { confirmOrderAction, recordCallOutcomeAction, logWhatsappAction } from "@/lib/order-actions";
+import { formatMAD, formatDate, waNumber } from "@/lib/utils";
 import type { Order } from "@/lib/types";
 import { useI18n } from "@/i18n/i18n-context";
-
-function waNumber(phone: string): string {
-  const d = phone.replace(/\D/g, "");
-  if (d.startsWith("212")) return d;
-  if (d.startsWith("0")) return "212" + d.slice(1);
-  return d;
-}
 
 export function ConfirmOrderCard({
   order,
@@ -141,6 +134,7 @@ export function ConfirmOrderCard({
           href={`https://wa.me/${waNumber(order.phone)}`}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={() => logWhatsappAction(order.id)}
           className="flex items-center justify-center gap-2 rounded-full bg-[#25D366] py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
         >
           <MessageCircle className="h-4 w-4" /> WhatsApp
