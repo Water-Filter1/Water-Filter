@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, Trash2, ShieldCheck, PhoneCall, Wrench, Pencil, X } from "lucide-react";
+import { UserPlus, Trash2, ShieldCheck, PhoneCall, Wrench, Pencil } from "lucide-react";
 import {
   createStaffUserAction,
   deleteStaffUserAction,
@@ -10,6 +10,23 @@ import {
 } from "@/lib/users-actions";
 import type { StaffUser } from "@/lib/data";
 import { useI18n } from "@/i18n/i18n-context";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { DataTable, type Column } from "@/components/admin/data-table";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { dashboardFont, dashboardFontStyle } from "@/lib/fonts";
+import { cn } from "@/lib/utils";
 
 const ROLE_META: Record<string, { labelKey: string; className: string; icon: typeof ShieldCheck }> = {
   admin: { labelKey: "admin.usersManager.role.admin", className: "bg-brand-100 text-brand-700", icon: ShieldCheck },
@@ -41,12 +58,16 @@ export function UsersManager({ users, currentUserId }: { users: StaffUser[]; cur
     });
   }
 
-  function remove(id: string, label: string) {
-    if (!confirm(t("admin.usersManager.deleteConfirm", { label }))) return;
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
+
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
     startTransition(async () => {
       const res = await deleteStaffUserAction(id);
       if (!res.ok) setError(res.error ?? t("admin.usersManager.error"));
       else router.refresh();
+      setDeleteTarget(null);
     });
   }
 
@@ -75,240 +96,326 @@ export function UsersManager({ users, currentUserId }: { users: StaffUser[]; cur
     });
   }
 
-  const input =
-    "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-100";
+  const roleLabel = (role: string) => {
+    switch (role) {
+      case "confirmateur":
+        return t("admin.usersManager.role.confirmateur");
+      case "plombier":
+        return t("admin.usersManager.role.technicien");
+      case "admin":
+        return t("admin.usersManager.role.admin");
+      default:
+        return "";
+    }
+  };
 
-  return (
-    <div className="grid gap-6 lg:grid-cols-[22rem_1fr]">
-      {/* Add form */}
-      <form
-        onSubmit={add}
-        className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-      >
-        <h2 className="flex items-center gap-2 font-display font-bold text-ink">
-          <UserPlus className="h-5 w-5 text-brand-500" /> {t("admin.usersManager.newMember")}
-        </h2>
-
-        {error && (
-          <div className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</div>
-        )}
-        {okMsg && (
-          <div className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{okMsg}</div>
-        )}
-
-        <label className="mt-4 block text-sm font-medium text-ink">{t("admin.usersManager.roleLabel")}</label>
-        <select
-          value={form.role}
-          onChange={(e) => setForm({ ...form, role: e.target.value })}
-          className={`${input} mt-1`}
-        >
-          <option value="confirmateur">{t("admin.usersManager.roleOption.confirmateur")}</option>
-          <option value="plombier">{t("admin.usersManager.roleOption.technicien")}</option>
-          <option value="admin">{t("admin.usersManager.roleOption.admin")}</option>
-        </select>
-
-        <label className="mt-3 block text-sm font-medium text-ink">{t("admin.usersManager.nameLabel")}</label>
-        <input
-          value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
-          className={`${input} mt-1`}
-          placeholder={t("admin.usersManager.namePlaceholder")}
-        />
-
-        {form.role === "plombier" && (
-          <>
-            <label className="mt-3 block text-sm font-medium text-ink">{t("admin.usersManager.cityLabel")}</label>
-            <input
-              value={form.city}
-              onChange={(e) => setForm({ ...form, city: e.target.value })}
-              className={`${input} mt-1`}
-              placeholder={t("admin.usersManager.cityPlaceholder")}
-            />
-            <p className="mt-1 text-xs text-ink-soft">
-              {t("admin.usersManager.cityHelp")}
-            </p>
-          </>
-        )}
-
-        <label className="mt-3 block text-sm font-medium text-ink">{t("admin.usersManager.emailLabel")}</label>
-        <input
-          type="email"
-          required
-          value={form.email}
-          onChange={(e) => setForm({ ...form, email: e.target.value })}
-          className={`${input} mt-1`}
-          placeholder="nom@exemple.com"
-        />
-
-        <label className="mt-3 block text-sm font-medium text-ink">{t("admin.usersManager.passwordLabel")}</label>
-        <input
-          type="text"
-          required
-          value={form.password}
-          onChange={(e) => setForm({ ...form, password: e.target.value })}
-          className={`${input} mt-1`}
-          placeholder={t("admin.usersManager.passwordPlaceholder")}
-        />
-        <p className="mt-1 text-xs text-ink-soft">
-          {t("admin.usersManager.passwordHelp")}
-        </p>
-
-        <button
-          type="submit"
-          disabled={pending}
-          className="mt-4 w-full rounded-full bg-brand-600 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:opacity-60"
-        >
-          {pending ? t("admin.usersManager.creating") : t("admin.usersManager.createAccount")}
-        </button>
-      </form>
-
-      {/* List */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <h2 className="border-b border-slate-200 px-5 py-4 font-display font-bold text-ink">
-          {t("admin.usersManager.team", { count: users.length })}
-        </h2>
-        <div className="divide-y divide-slate-100">
-          {users.map((u) => {
-            const meta = ROLE_META[u.role] ?? ROLE_META.admin;
-            return (
-              <div
-                key={u.id}
-                onClick={() => openEdit(u)}
-                className="flex cursor-pointer items-center gap-3 px-5 py-3 transition-colors hover:bg-slate-50"
-              >
-                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${meta.className}`}>
-                  <meta.icon className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-ink">
-                    {u.name || u.email}
-                    {u.id === currentUserId && (
-                      <span className="ms-2 text-xs font-normal text-ink-soft">{t("admin.usersManager.you")}</span>
-                    )}
-                  </p>
-                  <p className="truncate text-xs text-ink-soft">
-                    {u.email}
-                    {u.city ? ` · ${u.city}` : ""}
-                  </p>
-                </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${meta.className}`}>
-                  {t(meta.labelKey)}
-                </span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); openEdit(u); }}
-                  disabled={pending}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-soft transition hover:bg-brand-50 hover:text-brand-600 disabled:opacity-50"
-                  aria-label={t("admin.usersManager.edit")}
-                >
-                  <Pencil className="h-4 w-4" />
-                </button>
-                {u.id !== currentUserId && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); remove(u.id, u.name || u.email); }}
-                    disabled={pending}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-soft transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
-                    aria-label={t("admin.usersManager.delete")}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+  const columns: Column<StaffUser>[] = [
+    {
+      key: "name",
+      header: t("admin.usersManager.nameLabel"),
+      sort: (u) => u.name || u.email,
+      cell: (u) => {
+        const meta = ROLE_META[u.role] ?? ROLE_META.admin;
+        return (
+          <div className="flex items-center gap-3">
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${meta.className}`}>
+              <meta.icon className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="font-semibold text-ink">
+                {u.name || u.email}
+                {u.id === currentUserId && (
+                  <span className="ms-2 text-xs font-semibold text-ink-soft">{t("admin.usersManager.you")}</span>
                 )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Edit modal */}
-      {editing && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
-          onClick={() => setEditing(null)}
-        >
-          <div
-            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="font-display font-bold text-ink">{t("admin.usersManager.editMember")}</h3>
-              <button onClick={() => setEditing(null)} className="text-ink-soft hover:text-ink">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            {eError && (
-              <div className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{eError}</div>
-            )}
-
-            <label className="block text-sm font-medium text-ink">{t("admin.usersManager.roleLabel")}</label>
-            <select
-              value={eForm.role}
-              onChange={(e) => setEForm({ ...eForm, role: e.target.value })}
-              disabled={editing.id === currentUserId}
-              className={`${input} mt-1 disabled:opacity-60`}
-            >
-              <option value="confirmateur">{t("admin.usersManager.role.confirmateur")}</option>
-              <option value="plombier">{t("admin.usersManager.role.technicien")}</option>
-              <option value="admin">{t("admin.usersManager.role.admin")}</option>
-            </select>
-            {editing.id === currentUserId && (
-              <p className="mt-1 text-xs text-ink-soft">
-                {t("admin.usersManager.cannotChangeOwnRole")}
               </p>
-            )}
-
-            <label className="mt-3 block text-sm font-medium text-ink">{t("admin.usersManager.nameLabel")}</label>
-            <input
-              value={eForm.name}
-              onChange={(e) => setEForm({ ...eForm, name: e.target.value })}
-              className={`${input} mt-1`}
-            />
-
-            {eForm.role === "plombier" && (
-              <>
-                <label className="mt-3 block text-sm font-medium text-ink">{t("admin.usersManager.cityLabel")}</label>
-                <input
-                  value={eForm.city}
-                  onChange={(e) => setEForm({ ...eForm, city: e.target.value })}
-                  className={`${input} mt-1`}
-                  placeholder={t("admin.usersManager.cityPlaceholder")}
-                />
-              </>
-            )}
-
-            <label className="mt-3 block text-sm font-medium text-ink">{t("admin.usersManager.emailLabel")}</label>
-            <input
-              type="email"
-              value={eForm.email}
-              onChange={(e) => setEForm({ ...eForm, email: e.target.value })}
-              className={`${input} mt-1`}
-            />
-
-            <label className="mt-3 block text-sm font-medium text-ink">{t("admin.usersManager.newPasswordLabel")}</label>
-            <input
-              type="text"
-              value={eForm.password}
-              onChange={(e) => setEForm({ ...eForm, password: e.target.value })}
-              placeholder={t("admin.usersManager.newPasswordPlaceholder")}
-              className={`${input} mt-1`}
-            />
-
-            <div className="mt-4 flex gap-2">
-              <button
-                onClick={() => setEditing(null)}
-                className="flex-1 rounded-full border border-slate-200 py-2.5 text-sm font-semibold text-ink-soft transition hover:bg-slate-50"
-              >
-                {t("admin.usersManager.cancel")}
-              </button>
-              <button
-                onClick={saveEdit}
-                disabled={pending}
-                className="flex-1 rounded-full bg-brand-600 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:opacity-60"
-              >
-                {pending ? t("admin.usersManager.saving") : t("admin.usersManager.save")}
-              </button>
+              <p className="truncate text-xs text-ink-soft">
+                {u.email}
+                {u.city ? ` · ${u.city}` : ""}
+              </p>
             </div>
           </div>
+        );
+      },
+    },
+    {
+      key: "email",
+      header: t("admin.usersManager.emailLabel"),
+      sort: (u) => u.email,
+      cell: (u) => <span className="text-ink-soft">{u.email}</span>,
+    },
+    {
+      key: "role",
+      header: t("admin.usersManager.roleLabel"),
+      sort: (u) => u.role,
+      cell: (u) => {
+        const meta = ROLE_META[u.role] ?? ROLE_META.admin;
+        return (
+          <Badge className={`shrink-0 rounded-full font-semibold ${meta.className}`}>
+            {t(meta.labelKey)}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: "actions",
+      header: t("admin.productsPage.colActions"),
+      headClassName: "text-end",
+      className: "text-end",
+      cell: (u) => (
+        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => openEdit(u)}
+            disabled={pending}
+            className="shrink-0 rounded-lg text-ink-soft hover:bg-brand-50 hover:text-brand-600"
+          >
+            <Pencil className="h-4 w-4" />
+            <span className="sr-only">{t("admin.usersManager.edit")}</span>
+          </Button>
+          {u.id !== currentUserId && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setDeleteTarget({ id: u.id, label: u.name || u.email })}
+              disabled={pending}
+              className="shrink-0 rounded-lg text-ink-soft hover:bg-rose-50 hover:text-rose-600"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="sr-only">{t("admin.usersManager.delete")}</span>
+            </Button>
+          )}
         </div>
-      )}
+      ),
+    },
+  ];
+
+  return (
+    <div className="grid gap-6 font-semibold lg:grid-cols-[22rem_1fr]">
+      {/* Add form */}
+      <Card className="h-fit gap-0 px-5 py-5">
+        <form onSubmit={add}>
+          <h2 className="flex items-center gap-2 font-display font-bold text-ink">
+            <UserPlus className="h-5 w-5 text-brand-500" /> {t("admin.usersManager.newMember")}
+          </h2>
+
+          {error && (
+            <Alert variant="destructive" className="mt-3">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {okMsg && (
+            <Alert className="mt-3 border-emerald-200 bg-emerald-50">
+              <AlertDescription className="text-emerald-700">{okMsg}</AlertDescription>
+            </Alert>
+          )}
+
+          <Label className="mt-4 block text-sm font-semibold text-ink">{t("admin.usersManager.roleLabel")}</Label>
+          <Select
+            value={form.role}
+            onValueChange={(v) => setForm({ ...form, role: String(v) })}
+          >
+            <SelectTrigger className="mt-1 h-11 w-full rounded-xl">
+              <SelectValue>
+                {(value) => {
+                  switch (String(value)) {
+                    case "confirmateur":
+                      return t("admin.usersManager.roleOption.confirmateur");
+                    case "plombier":
+                      return t("admin.usersManager.roleOption.technicien");
+                    case "admin":
+                      return t("admin.usersManager.roleOption.admin");
+                    default:
+                      return "";
+                  }
+                }}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="confirmateur">{t("admin.usersManager.roleOption.confirmateur")}</SelectItem>
+              <SelectItem value="plombier">{t("admin.usersManager.roleOption.technicien")}</SelectItem>
+              <SelectItem value="admin">{t("admin.usersManager.roleOption.admin")}</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Label className="mt-3 block text-sm font-semibold text-ink">{t("admin.usersManager.nameLabel")}</Label>
+          <Input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            className="mt-1 h-11 rounded-xl"
+            placeholder={t("admin.usersManager.namePlaceholder")}
+          />
+
+          {form.role === "plombier" && (
+            <>
+              <Label className="mt-3 block text-sm font-semibold text-ink">{t("admin.usersManager.cityLabel")}</Label>
+              <Input
+                value={form.city}
+                onChange={(e) => setForm({ ...form, city: e.target.value })}
+                className="mt-1 h-11 rounded-xl"
+                placeholder={t("admin.usersManager.cityPlaceholder")}
+              />
+              <p className="mt-1 text-xs text-ink-soft">
+                {t("admin.usersManager.cityHelp")}
+              </p>
+            </>
+          )}
+
+          <Label className="mt-3 block text-sm font-semibold text-ink">{t("admin.usersManager.emailLabel")}</Label>
+          <Input
+            type="email"
+            required
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            className="mt-1 h-11 rounded-xl"
+            placeholder="nom@exemple.com"
+          />
+
+          <Label className="mt-3 block text-sm font-semibold text-ink">{t("admin.usersManager.passwordLabel")}</Label>
+          <Input
+            type="text"
+            required
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            className="mt-1 h-11 rounded-xl"
+            placeholder={t("admin.usersManager.passwordPlaceholder")}
+          />
+          <p className="mt-1 text-xs text-ink-soft">
+            {t("admin.usersManager.passwordHelp")}
+          </p>
+
+          <Button
+            type="submit"
+            disabled={pending}
+            className="mt-4 w-full font-semibold"
+          >
+            {pending ? t("admin.usersManager.creating") : t("admin.usersManager.createAccount")}
+          </Button>
+        </form>
+      </Card>
+
+      {/* List */}
+      <div className="space-y-3">
+        <h2 className="font-display font-bold text-ink">
+          {t("admin.usersManager.team", { count: users.length })}
+        </h2>
+        <DataTable
+          rows={users}
+          columns={columns}
+          getRowId={(u) => u.id}
+          search={(u) => `${u.name ?? ""} ${u.email} ${u.city ?? ""} ${roleLabel(u.role)}`}
+          onRowClick={(u) => openEdit(u)}
+          defaultSortKey="name"
+          defaultSortDir="asc"
+          minWidth="min-w-[640px]"
+        />
+      </div>
+
+      {/* Edit dialog */}
+      <Dialog open={!!editing} onOpenChange={(o) => { if (!o) setEditing(null); }}>
+        <DialogContent className={cn(dashboardFont.variable, "gap-0 overflow-hidden p-0 font-semibold sm:max-w-lg")} style={dashboardFontStyle}>
+          {editing && (() => {
+            const RoleIcon = (ROLE_META[eForm.role] ?? ROLE_META.admin).icon;
+            return (
+              <>
+                <DialogHeader className="border-b border-slate-100 px-6 py-5">
+                  <div className="flex items-center gap-3">
+                    <span className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ring-1 ring-inset ring-black/5", (ROLE_META[eForm.role] ?? ROLE_META.admin).className)}>
+                      <RoleIcon className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <DialogTitle className="font-display text-base font-bold text-ink">{t("admin.usersManager.editMember")}</DialogTitle>
+                      <p className="truncate text-sm font-semibold text-ink-soft" dir="ltr">{editing.email}</p>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                <div className="space-y-4 px-6 py-5">
+                  {eError && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{eError}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  <div>
+                    <Label className="mb-1.5 block text-sm font-semibold text-ink">{t("admin.usersManager.roleLabel")}</Label>
+                    <Select
+                      value={eForm.role}
+                      onValueChange={(v) => setEForm({ ...eForm, role: String(v) })}
+                      disabled={editing.id === currentUserId}
+                    >
+                      <SelectTrigger className="h-11 w-full rounded-xl disabled:opacity-60">
+                        <SelectValue>{(value) => roleLabel(String(value))}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className={cn(dashboardFont.variable, "font-semibold")} style={dashboardFontStyle}>
+                        <SelectItem value="confirmateur">{t("admin.usersManager.role.confirmateur")}</SelectItem>
+                        <SelectItem value="plombier">{t("admin.usersManager.role.technicien")}</SelectItem>
+                        <SelectItem value="admin">{t("admin.usersManager.role.admin")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {editing.id === currentUserId && (
+                      <p className="mt-1 text-xs text-ink-soft">{t("admin.usersManager.cannotChangeOwnRole")}</p>
+                    )}
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label className="mb-1.5 block text-sm font-semibold text-ink">{t("admin.usersManager.nameLabel")}</Label>
+                      <Input value={eForm.name} onChange={(e) => setEForm({ ...eForm, name: e.target.value })} className="h-11 rounded-xl" />
+                    </div>
+                    <div>
+                      <Label className="mb-1.5 block text-sm font-semibold text-ink">{t("admin.usersManager.emailLabel")}</Label>
+                      <Input type="email" value={eForm.email} onChange={(e) => setEForm({ ...eForm, email: e.target.value })} className="h-11 rounded-xl" />
+                    </div>
+                  </div>
+
+                  {eForm.role === "plombier" && (
+                    <div>
+                      <Label className="mb-1.5 block text-sm font-semibold text-ink">{t("admin.usersManager.cityLabel")}</Label>
+                      <Input value={eForm.city} onChange={(e) => setEForm({ ...eForm, city: e.target.value })} className="h-11 rounded-xl" placeholder={t("admin.usersManager.cityPlaceholder")} />
+                    </div>
+                  )}
+
+                  <div>
+                    <Label className="mb-1.5 block text-sm font-semibold text-ink">{t("admin.usersManager.newPasswordLabel")}</Label>
+                    <Input type="text" value={eForm.password} onChange={(e) => setEForm({ ...eForm, password: e.target.value })} placeholder={t("admin.usersManager.newPasswordPlaceholder")} className="h-11 rounded-xl" />
+                  </div>
+                </div>
+
+                <DialogFooter className="m-0 border-t border-slate-100 bg-white px-6 py-4">
+                  <Button variant="outline" onClick={() => setEditing(null)} className="font-semibold text-ink-soft">{t("admin.usersManager.cancel")}</Button>
+                  <Button onClick={saveEdit} disabled={pending} className="font-semibold">
+                    {pending ? t("admin.usersManager.saving") : t("admin.usersManager.save")}
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirm dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <DialogContent className={cn(dashboardFont.variable, "gap-0 overflow-hidden p-0 font-semibold sm:max-w-sm")} style={dashboardFontStyle}>
+          <DialogHeader className="px-6 py-5">
+            <div className="flex items-center gap-3">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 ring-1 ring-inset ring-rose-100">
+                <Trash2 className="h-5 w-5" />
+              </span>
+              <DialogTitle className="font-display text-base font-bold text-ink">{t("admin.usersManager.deleteTitle")}</DialogTitle>
+            </div>
+          </DialogHeader>
+          <p className="px-6 pb-5 text-sm text-ink-soft" dir="auto">
+            {deleteTarget ? t("admin.usersManager.deleteConfirm", { label: deleteTarget.label }) : ""}
+          </p>
+          <DialogFooter className="m-0 border-t border-slate-100 bg-white px-6 py-4">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} className="font-semibold text-ink-soft">{t("admin.usersManager.cancel")}</Button>
+            <Button onClick={confirmDelete} disabled={pending} className="bg-rose-600 font-semibold text-white hover:bg-rose-700">
+              {pending ? t("admin.usersManager.saving") : t("admin.usersManager.delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

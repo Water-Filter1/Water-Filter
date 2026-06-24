@@ -53,6 +53,8 @@ export async function createOrderAction(payload: {
   address: string;
   note?: string;
   items: { productId: string; qty: number; variantLabel?: string }[];
+  acquisitionSource?: string;
+  whatsappOptIn?: boolean;
   hp?: string; // honeypot — must stay empty (bots fill it)
 }): Promise<
   | { ok: true; id: string; total: number; delivery: number; items: OrderItem[] }
@@ -65,7 +67,9 @@ export async function createOrderAction(payload: {
     return { ok: false, error: "Trop de commandes envoyées. Réessayez dans quelques minutes." };
   }
   try {
-    const order = await createOrder(payload);
+    const SOURCES = ["facebook", "tiktok", "instagram", "google", "referral", "other"];
+    const acquisitionSource = payload.acquisitionSource && SOURCES.includes(payload.acquisitionSource) ? payload.acquisitionSource : null;
+    const order = await createOrder({ ...payload, acquisitionSource, whatsappOptIn: !!payload.whatsappOptIn });
     await notifyNewOrder(order); // emails the owner if configured; never throws
     revalidatePath("/admin/orders");
     revalidatePath("/admin");
@@ -345,10 +349,13 @@ export async function createPhoneOrderAction(payload: {
   address: string;
   note?: string;
   items: { productId: string; qty: number; variantLabel?: string }[];
+  acquisitionSource?: string;
 }): Promise<{ ok: boolean; id?: string; error?: string }> {
   await requireStaff(["confirmateur", "admin"]);
   try {
-    const order = await createOrder({ ...payload, source: "phone" });
+    const SOURCES = ["facebook", "tiktok", "instagram", "google", "referral", "other"];
+    const acquisitionSource = payload.acquisitionSource && SOURCES.includes(payload.acquisitionSource) ? payload.acquisitionSource : null;
+    const order = await createOrder({ ...payload, source: "phone", acquisitionSource });
     revalidatePath("/confirmation");
     revalidatePath("/admin/orders");
     revalidatePath("/admin");

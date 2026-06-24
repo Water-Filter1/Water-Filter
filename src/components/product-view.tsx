@@ -14,7 +14,7 @@ import {
   CircleCheck,
 } from "lucide-react";
 import type { Product } from "@/lib/types";
-import { ProductPhoto } from "./product-photo";
+import { ProductGallery } from "./product-gallery";
 import { StarRating } from "./star-rating";
 import { Badge, toneForBadge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -29,7 +29,6 @@ export function ProductView({ product }: { product: Product }) {
   const { addItem } = useCart();
   const { t, locale } = useI18n();
   const settings = useSettings();
-  const [activeImg, setActiveImg] = useState(0);
   const [qty, setQty] = useState(1);
   const [variant, setVariant] = useState(product.variants?.[0]);
   const [added, setAdded] = useState(false);
@@ -71,42 +70,7 @@ export function ProductView({ product }: { product: Product }) {
   return (
     <div className="grid gap-8 lg:grid-cols-2 lg:gap-12">
       {/* Gallery */}
-      <div>
-        <div className="relative aspect-square overflow-hidden rounded-card border border-line bg-white shadow-soft">
-          <ProductPhoto
-            src={images[activeImg] ?? images[0]}
-            alt={product.name}
-            hue={product.hue}
-            sizes="(max-width: 1024px) 100vw, 45vw"
-            priority
-            className="p-4"
-          />
-        </div>
-        {images.length > 1 && (
-          <div className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-5">
-            {images.slice(0, 10).map((src, i) => (
-              <button
-                key={i}
-                onClick={() => setActiveImg(i)}
-                className={cn(
-                  "relative aspect-square overflow-hidden rounded-2xl border-2 bg-white transition-all",
-                  activeImg === i
-                    ? "border-brand-500"
-                    : "border-transparent opacity-70 hover:opacity-100",
-                )}
-              >
-                <ProductPhoto
-                  src={src}
-                  alt={`${product.name} ${i + 1}`}
-                  hue={product.hue}
-                  sizes="120px"
-                  className="p-1"
-                />
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <ProductGallery images={images} name={product.name} hue={product.hue} />
 
       {/* Info */}
       <div>

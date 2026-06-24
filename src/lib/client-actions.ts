@@ -5,8 +5,12 @@ import {
   setClientStatus,
   updateClient,
   getClientDetail,
+  createClient,
+  addClientNote,
+  setClientTags,
   logActivity,
   type ClientDetail,
+  type ClientNoteRow,
 } from "@/lib/data";
 import { requireRole } from "@/lib/auth";
 
@@ -74,6 +78,60 @@ export async function updateClientAction(
     });
     revalidatePath("/admin/clients");
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "ERROR" };
+  }
+}
+
+/** Admin: manually create a client / lead. */
+export async function createClientAction(data: {
+  phone: string;
+  name: string;
+  city?: string;
+  email?: string | null;
+  address?: string | null;
+  note?: string | null;
+}): Promise<{ ok: true; phone: string } | { ok: false; error: string }> {
+  const me = await requireRole(["admin"]);
+  const name = (data.name ?? "").trim();
+  if (name.length < 2 || name.length > 60) return { ok: false, error: "INVALID_NAME" };
+  const res = await createClient({ ...data, name });
+  if (res.ok) {
+    await logActivity({ actor: me.email, action: "client.created", entity: res.phone, summary: `Client ${res.phone} created` });
+    revalidatePath("/admin/clients");
+  }
+  return res;
+}
+
+/** Admin: append a timestamped note to a client's activity log. */
+export async function addClientNoteAction(
+  phone: string,
+  body: string,
+): Promise<{ ok: true; note: ClientNoteRow } | { ok: false; error: string }> {
+  const me = await requireRole(["admin"]);
+  const b = (body ?? "").trim();
+  if (b.length < 1 || b.length > 1000) return { ok: false, error: "INVALID_NOTE" };
+  try {
+    const note = await addClientNote(phone, b, me.email);
+    await logActivity({ actor: me.email, action: "client.note", entity: phone, summary: `Note added to ${phone}` });
+    revalidatePath("/admin/clients");
+    return { ok: true, note };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "ERROR" };
+  }
+}
+
+/** Admin: replace a client's tag set. */
+export async function setClientTagsAction(
+  phone: string,
+  tags: string[],
+): Promise<{ ok: true; tags: string[] } | { ok: false; error: string }> {
+  const me = await requireRole(["admin"]);
+  try {
+    const clean = await setClientTags(phone, tags);
+    await logActivity({ actor: me.email, action: "client.tags", entity: phone, summary: `Tags set on ${phone}` });
+    revalidatePath("/admin/clients");
+    return { ok: true, tags: clean };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "ERROR" };
   }

@@ -18,6 +18,7 @@ model Product {
   shortDescription String   @default("")
   description      String   @default("")
   price            Int
+  cost             Int      @default(0) // unit purchase cost (for COGS / real profit)
   oldPrice         Int?
   rating           Float    @default(0)
   reviewCount      Int      @default(0)
@@ -27,6 +28,7 @@ model Product {
   badges           String[] @default([])
   inStock          Boolean  @default(true)
   stock            Int      @default(0)
+  reorderPoint     Int      @default(5) // alert/reorder threshold (per product)
   allowBackorder   Boolean  @default(false) // "sur commande": orderable even at 0 stock
   bestSeller       Boolean  @default(false)
   hue              Int      @default(205)
@@ -36,8 +38,24 @@ model Product {
   variants         Json?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+  movements        StockMovement[]
 
   @@index([categorySlug])
+}
+
+model StockMovement {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  delta     Int      // signed change: + in, - out
+  before    Int
+  after     Int
+  reason    String   // received | correction | damaged | return | sale | maintenance
+  note      String?
+  actor     String?  // email of who made the change
+  createdAt DateTime @default(now())
+
+  @@index([productId, createdAt])
 }
 
 model Order {
@@ -52,6 +70,7 @@ model Order {
   status           String    @default("pending")
   confirmationNote String?
   source           String    @default("web") // "web" | "phone"
+  acquisitionSource String?  // how the customer found us: facebook | tiktok | instagram | google | referral | other
   confirmedAt      DateTime?
   confirmedBy      String? // confirmateur email who confirmed / cancelled (for performance)
   installDate      DateTime? // scheduled installation date/time
@@ -121,6 +140,7 @@ model SiteSettings {
   announcement           String?
   freeDeliveryThreshold  Int      @default(1000)
   deliveryFee            Int      @default(40)
+  confirmateurMonthly    Int      @default(0) // fixed monthly pay for the confirmateur (operating expense)
   updatedAt              DateTime @updatedAt
 }
 
@@ -155,16 +175,18 @@ model InvoiceCounter {
 }
 
 model Review {
-  id        String   @id @default(cuid())
-  productId String
-  name      String
-  rating    Int // 1-5 stars
-  comment   String
-  status    String   @default("pending") // pending | approved | rejected
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  productId   String
+  name        String
+  rating      Int // 1-5 stars
+  comment     String
+  status      String   @default("pending") // pending | approved | rejected
+  clientPhone String? // normalized phone, set when the reviewer matches a known client
+  createdAt   DateTime @default(now())
 
   @@index([productId, status])
   @@index([status])
+  @@index([clientPhone])
 }
 
 // CRM customer record — auto-upserted from every order, keyed by normalized phone.
@@ -179,12 +201,26 @@ model Client {
   source       String   @default("web") // "web" | "phone"
   status       String   @default("active") // "active" | "inactive"
   note         String?
+  tags         String[] @default([]) // freeform CRM labels: VIP, grossiste, mauvais payeur…
+  acquisitionSource String? // marketing channel the customer came from (set on first order)
+  whatsappOptIn Boolean @default(false) // consented to WhatsApp/SMS marketing
   firstOrderAt DateTime @default(now())
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@index([status])
   @@index([city])
+}
+
+// Timestamped CRM notes / interaction log per client (joined by normalized phone, like orders).
+model ClientNote {
+  id          String   @id @default(cuid())
+  clientPhone String // normalized phone (matches Client.phone)
+  body        String
+  author      String   @default("admin") // admin email who wrote it
+  createdAt   DateTime @default(now())
+
+  @@index([clientPhone])
 }
 
 // Audit trail — every meaningful action in the system, for the admin "activity" feed.

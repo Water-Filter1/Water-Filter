@@ -89,7 +89,7 @@ export default async function AdminDashboard() {
     { icon: ShoppingBag, tone: "bg-brand-50 text-brand-600", glow: "bg-brand-400", label: t("admin.dash.kpiNewOrders"), value: String(overview.newOrdersToday), hint: t("admin.dash.kpiNewOrdersHint"), href: "/admin/orders", spark: orderActivity.newOrders, sparkColor: "var(--color-brand-500)" },
     { icon: Clock, tone: "bg-amber-50 text-amber-600", glow: "bg-amber-400", label: t("admin.dash.kpiToConfirm"), value: String(overview.pending), hint: t("admin.dash.kpiToConfirmHint"), href: "/admin/orders?status=pending", spark: metricSeries.pending, sparkColor: "#f59e0b" },
     { icon: Wrench, tone: "bg-indigo-50 text-indigo-600", glow: "bg-indigo-400", label: t("admin.dash.kpiInstallsToday"), value: String(overview.installationsToday), hint: t("admin.dash.kpiInstallsHint"), href: "/admin/orders?status=confirmed", spark: orderActivity.installs, sparkColor: "#6366f1" },
-    { icon: Bell, tone: "bg-orange-50 text-orange-600", glow: "bg-orange-400", label: t("admin.dash.kpiSavDue"), value: String(overview.savDue), hint: t("admin.dash.kpiSavHint"), href: "/admin/maintenance", spark: metricSeries.savDue, sparkColor: "#f97316" },
+    { icon: Bell, tone: "bg-orange-50 text-orange-600", glow: "bg-orange-400", label: t("admin.dash.kpiSavDue"), value: String(overview.savDue), hint: t("admin.dash.kpiSavHint"), href: "/admin/service", spark: metricSeries.savDue, sparkColor: "#f97316" },
   ];
 
   const bizCards = [

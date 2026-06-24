@@ -6,8 +6,11 @@ import { Star, Check, X, MessageSquare } from "lucide-react";
 import { approveReviewAction, rejectReviewAction } from "@/lib/review-actions";
 import { useI18n } from "@/i18n/i18n-context";
 import { formatDate, cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 
-type AdminReview = {
+export type AdminReview = {
   id: string;
   name: string;
   rating: number;
@@ -23,7 +26,13 @@ const STATUS_STYLE: Record<string, string> = {
   rejected: "bg-rose-100 text-rose-600",
 };
 
-export function ReviewsManager({ reviews }: { reviews: AdminReview[] }) {
+export function ReviewsManager({
+  reviews,
+  view = "list",
+}: {
+  reviews: AdminReview[];
+  view?: "list" | "grid";
+}) {
   const { t } = useI18n();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -47,19 +56,19 @@ export function ReviewsManager({ reviews }: { reviews: AdminReview[] }) {
 
   if (reviews.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white py-20 text-center">
+      <Card className="flex flex-col items-center justify-center border border-dashed border-slate-300 bg-white py-20 text-center font-semibold">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-500">
           <MessageSquare className="h-7 w-7" />
         </div>
         <p className="mt-4 text-ink-soft">{t("admin.reviews.empty")}</p>
-      </div>
+      </Card>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className={view === "grid" ? "grid items-start gap-4 lg:grid-cols-2" : "space-y-4"}>
       {reviews.map((r) => (
-        <div key={r.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <Card key={r.id} className="block gap-0 border border-slate-200 bg-white p-5 font-semibold shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2">
@@ -71,13 +80,13 @@ export function ReviewsManager({ reviews }: { reviews: AdminReview[] }) {
                     />
                   ))}
                 </div>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLE[r.status] ?? STATUS_STYLE.pending}`}>
+                <Badge className={cn("text-xs", STATUS_STYLE[r.status] ?? STATUS_STYLE.pending)}>
                   {statusLabel(r.status)}
-                </span>
+                </Badge>
               </div>
               <p className="mt-1 text-xs text-ink-soft">
                 {t("admin.reviews.onProduct")}{" "}
-                <span className="font-medium text-ink" dir="auto">{r.productName ?? "—"}</span>
+                <span className="font-semibold text-ink" dir="auto">{r.productName ?? "—"}</span>
               </p>
             </div>
             <span className="text-xs text-ink-soft">{formatDate(r.createdAt)}</span>
@@ -88,25 +97,29 @@ export function ReviewsManager({ reviews }: { reviews: AdminReview[] }) {
 
           <div className="mt-4 flex flex-wrap gap-2">
             {r.status !== "approved" && (
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => act(r.id, approveReviewAction)}
                 disabled={pending && busy === r.id}
-                className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-60"
+                className="gap-1.5 bg-emerald-500 font-semibold text-white hover:bg-emerald-600 disabled:opacity-60"
               >
                 <Check className="h-4 w-4" /> {t("admin.reviews.approve")}
-              </button>
+              </Button>
             )}
             {r.status !== "rejected" && (
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => act(r.id, rejectReviewAction)}
                 disabled={pending && busy === r.id}
-                className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60"
+                className="gap-1.5 border-rose-200 bg-white font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60"
               >
                 <X className="h-4 w-4" /> {t("admin.reviews.reject")}
-              </button>
+              </Button>
             )}
           </div>
-        </div>
+        </Card>
       ))}
     </div>
   );

@@ -8,6 +8,7 @@ import { I18nProvider } from "@/i18n/i18n-context";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { getT } from "@/i18n/server";
 import { dirFor } from "@/i18n/config";
+import { dashboardFont, dashboardFontStyle } from "@/lib/fonts";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,12 @@ export default async function TechnicienLayout({ children }: { children: React.R
   ]);
   return (
     <I18nProvider locale={locale}>
-      <div dir={dirFor(locale)} lang={locale} className="min-h-screen bg-neutral-50">
+      <div
+        dir={dirFor(locale)}
+        lang={locale}
+        className={`${dashboardFont.variable} min-h-screen bg-neutral-50`}
+        style={dashboardFontStyle}
+      >
         {/* Sidebar (desktop) */}
         <aside className="fixed inset-y-0 start-0 hidden w-64 flex-col border-e border-line bg-white lg:flex">
           <Link href="/technicien" className="flex items-center gap-2 px-5 py-5">

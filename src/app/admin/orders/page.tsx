@@ -1,5 +1,6 @@
-import Link from "next/link";
 import { getOrders } from "@/lib/data";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { OrdersTable } from "@/components/admin/orders-table";
 import type { OrderStatus } from "@/lib/types";
 import { getT } from "@/i18n/server";
@@ -26,7 +27,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   const countFor = (key: string) => (key ? all.filter((o) => o.status === key).length : all.length);
 
   return (
-    <div>
+    <div className="font-semibold">
       <div className="mb-6">
         <h1 className="font-display text-2xl font-bold text-ink">{t("admin.ordersPage.title")}</h1>
         <p className="text-sm text-ink-soft">{t("admin.ordersPage.subtitle")}</p>
@@ -37,20 +38,18 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
         {TABS.map((tab) => {
           const active = status === tab.key;
           return (
-            <Link
+            <Button
               key={tab.key}
               href={tab.key ? `/admin/orders?status=${tab.key}` : "/admin/orders"}
-              className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                active
-                  ? "bg-brand-600 text-white"
-                  : "border border-slate-200 bg-white text-ink-soft hover:bg-slate-50"
-              }`}
+              variant={active ? "primary" : "outline"}
+              size="sm"
+              className="gap-2 font-semibold"
             >
               {t(tab.labelKey)}
-              <span className={`rounded-full px-1.5 text-xs ${active ? "bg-white/20" : "bg-slate-100 text-ink"}`}>
+              <Badge className={`px-1.5 text-xs ${active ? "bg-white/20 text-white" : "bg-slate-100 text-ink"}`}>
                 {countFor(tab.key)}
-              </span>
-            </Link>
+              </Badge>
+            </Button>
           );
         })}
       </div>

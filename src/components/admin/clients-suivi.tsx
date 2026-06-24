@@ -21,6 +21,17 @@ import {
 import { formatDate, waNumber, addMonths } from "@/lib/utils";
 import { useI18n } from "@/i18n/i18n-context";
 import type { Order } from "@/lib/types";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type Plombier = { email: string; name: string | null; city: string | null };
 
@@ -64,7 +75,7 @@ function InstallationCard({ o, plombiers }: { o: Order; plombiers: Plombier[] })
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <Card className="gap-0 rounded-2xl p-5 font-semibold">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="font-display font-bold text-ink" dir="auto">{o.customerName}</p>
@@ -73,51 +84,55 @@ function InstallationCard({ o, plombiers }: { o: Order; plombiers: Plombier[] })
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${warrantyActive ? "bg-brand-100 text-brand-700" : "bg-slate-100 text-ink-soft"}`}>
+          <Badge className={`text-xs ${warrantyActive ? "bg-brand-100 text-brand-700" : "bg-muted text-ink-soft"}`}>
             <ShieldCheck className="h-3.5 w-3.5" /> {warrantyActive ? t("admin.clientsSuivi.warrantyActive") : t("admin.clientsSuivi.warrantyExpired")}
-          </span>
-          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${maintPill.cls}`}>
+          </Badge>
+          <Badge className={`text-xs ${maintPill.cls}`}>
             <Wrench className="h-3.5 w-3.5" /> {maintPill.label}
-          </span>
+          </Badge>
         </div>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {o.items.map((it, i) => (
-          <span key={i} className="rounded-lg bg-slate-50 px-2 py-1 text-xs text-ink" dir="auto">
+          <Badge key={i} className="rounded-lg bg-muted/50 px-2 py-1 text-xs font-semibold text-ink">
             {it.name} ×{it.qty}
-          </span>
+          </Badge>
         ))}
       </div>
 
       <dl className="mt-3 space-y-1 text-sm">
         <div className="flex justify-between gap-3">
           <dt className="text-ink-soft">{t("admin.clientsSuivi.installedOn")}</dt>
-          <dd className="font-medium text-ink">{o.completedAt ? formatDate(o.completedAt) : "—"}</dd>
+          <dd className="font-semibold text-ink">{o.completedAt ? formatDate(o.completedAt) : "—"}</dd>
         </div>
         <div className="flex justify-between gap-3">
           <dt className="text-ink-soft">{t("admin.clientsSuivi.warrantyUntil")}</dt>
-          <dd className="font-medium text-ink">{warrantyEnd ? formatDate(warrantyEnd.toISOString()) : "—"}</dd>
+          <dd className="font-semibold text-ink">{warrantyEnd ? formatDate(warrantyEnd.toISOString()) : "—"}</dd>
         </div>
         <div className="flex justify-between gap-3">
           <dt className="text-ink-soft">{t("admin.clientsSuivi.nextMaintenance")}</dt>
-          <dd className={`font-medium ${overdue ? "text-rose-600" : soon ? "text-orange-600" : "text-ink"}`}>
+          <dd className={`font-semibold ${overdue ? "text-rose-600" : soon ? "text-orange-600" : "text-ink"}`}>
             {next ? formatDate(next.toISOString()) : "—"}
           </dd>
         </div>
         <div className="flex items-center justify-between gap-3">
           <dt className="text-ink-soft">{t("admin.clientsSuivi.interval")}</dt>
           <dd>
-            <select
-              value={o.maintenanceMonths}
-              onChange={(e) => run(() => setMaintenanceIntervalAction(o.id, Number(e.target.value)))}
+            <Select
+              value={String(o.maintenanceMonths)}
+              onValueChange={(v) => run(() => setMaintenanceIntervalAction(o.id, Number(v)))}
               disabled={pending}
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm outline-none focus:border-brand-300"
             >
-              {INTERVALS.map((m) => (
-                <option key={m} value={m}>{t("admin.clientsSuivi.months", { m })}</option>
-              ))}
-            </select>
+              <SelectTrigger className="text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {INTERVALS.map((m) => (
+                  <SelectItem key={m} value={String(m)}>{t("admin.clientsSuivi.months", { m })}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </dd>
         </div>
       </dl>
@@ -125,7 +140,7 @@ function InstallationCard({ o, plombiers }: { o: Order; plombiers: Plombier[] })
       {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <a href={`tel:${tel}`} className="flex items-center justify-center gap-1.5 rounded-full border border-slate-200 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50">
+        <a href={`tel:${tel}`} className="flex items-center justify-center gap-1.5 rounded-full border border-border py-2 text-sm font-semibold text-ink transition hover:bg-muted/50">
           <Phone className="h-4 w-4" /> {t("admin.clientsSuivi.call")}
         </a>
         <a href={`https://wa.me/${waNumber(o.phone)}`} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1.5 rounded-full bg-[#25D366] py-2 text-sm font-semibold text-white transition hover:brightness-105">
@@ -134,56 +149,62 @@ function InstallationCard({ o, plombiers }: { o: Order; plombiers: Plombier[] })
       </div>
 
       <div className="mt-2 flex flex-wrap gap-2">
-        <button
+        <Button
+          variant="primary"
+          size="sm"
           onClick={() => setScheduling((v) => !v)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
+          className="font-semibold"
         >
           <CalendarClock className="h-4 w-4" /> {t("admin.clientsSuivi.scheduleMaintenance")}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => run(() => markMaintenanceDoneAction(o.id))}
           disabled={pending}
-          className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-60"
+          className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 font-semibold"
         >
           <Check className="h-4 w-4" /> {t("admin.clientsSuivi.maintenanceDone")}
-        </button>
+        </Button>
       </div>
 
       {scheduling && (
-        <div className="mt-3 rounded-xl bg-slate-50 p-3">
+        <div className="mt-3 rounded-xl bg-muted/50 p-3">
           <p className="mb-2 text-sm font-semibold text-ink">{t("admin.clientsSuivi.sendTechnicianTitle")}</p>
-          <input
+          <Input
             type="datetime-local"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-100"
+            className="h-11"
           />
           {plombiers.length > 0 && (
-            <select
-              value={assignedTo}
-              onChange={(e) => setAssignedTo(e.target.value)}
-              className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-100"
-            >
-              {plombiers.map((p) => (
-                <option key={p.email} value={p.email}>
-                  {p.name ?? p.email}{p.city ? ` — ${p.city}` : ""}
-                </option>
-              ))}
-            </select>
+            <Select value={assignedTo} onValueChange={(v) => setAssignedTo(v ?? "")}>
+              <SelectTrigger className="mt-2 h-11 w-full text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {plombiers.map((p) => (
+                  <SelectItem key={p.email} value={p.email}>
+                    {p.name ?? p.email}{p.city ? ` — ${p.city}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
-          <button
+          <Button
+            variant="primary"
             onClick={() => {
               if (!date) { setError(t("admin.clientsSuivi.errorNoDate")); return; }
               run(() => scheduleMaintenanceAction({ parentId: o.id, installDate: new Date(date).toISOString(), assignedTo: assignedTo || undefined }));
             }}
             disabled={pending}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-brand-600 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:opacity-60"
+            className="mt-3 w-full font-semibold"
           >
             <Send className="h-4 w-4" /> {pending ? t("admin.clientsSuivi.sending") : t("admin.clientsSuivi.sendTechnician")}
-          </button>
+          </Button>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -207,19 +228,19 @@ export function ClientsSuivi({
     : installations;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 font-semibold">
       <div className="relative">
-        <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft" />
-        <input
+        <Search className="absolute start-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-ink-soft" />
+        <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={t("admin.clientsSuivi.searchPlaceholder")}
-          className="h-12 w-full rounded-xl border border-slate-200 bg-white ps-10 pe-4 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-100"
+          className="h-12 ps-10 pe-4 text-sm"
         />
       </div>
 
       {list.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white py-20 text-center">
+        <Card className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-20 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-500">
             <ShieldCheck className="h-7 w-7" />
           </div>
@@ -231,7 +252,7 @@ export function ClientsSuivi({
               ? t("admin.clientsSuivi.emptyHint")
               : t("admin.clientsSuivi.noResultsHint")}
           </p>
-        </div>
+        </Card>
       ) : (
         <div className="grid items-start gap-4 lg:grid-cols-2">
           {list.map((o) => (

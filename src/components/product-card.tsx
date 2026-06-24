@@ -47,7 +47,7 @@ export function ProductCard({ product }: { product: Product }) {
           alt={product.name}
           hue={product.hue}
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-          className="p-3 transition-transform duration-500 group-hover:scale-105"
+          className="object-cover transition-transform duration-500 group-hover:scale-105"
         />
         <div className="absolute start-3 top-3 z-10 flex flex-col gap-1.5">
           {product.badges.map((b) => (

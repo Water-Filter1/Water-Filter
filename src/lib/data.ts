@@ -1,6 +1,6 @@
 import type { Product as PRow, Order as ORow } from "@prisma/client";
 import { unstable_cache, revalidateTag } from "next/cache";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDbRetry } from "@/lib/prisma";
 import type {
   Order,
   OrderItem,
@@ -22,6 +22,7 @@ function toProduct(row: PRow): Product {
     shortDescription: row.shortDescription,
     description: row.description,
     price: row.price,
+    cost: row.cost,
     oldPrice: row.oldPrice ?? undefined,
     rating: row.rating,
     reviewCount: row.reviewCount,
@@ -384,22 +385,24 @@ export async function getAdminNotifications(): Promise<AdminNotifications> {
   const dueLimit = new Date();
   dueLimit.setDate(dueLimit.getDate() + 14);
   const [pendingCount, pending, low, unreadMessagesCount, msgs, maintCount, maint, pendingReviewsCount] =
-    await Promise.all([
-      prisma.order.count({ where: { status: "pending" } }),
-      prisma.order.findMany({ where: { status: "pending" }, orderBy: { createdAt: "desc" }, take: 8 }),
-      prisma.product.findMany({ where: { inStock: true, stock: { lte: 5 } }, orderBy: { stock: "asc" }, take: 8 }),
-      prisma.contactMessage.count({ where: { read: false } }),
-      prisma.contactMessage.findMany({ where: { read: false }, orderBy: { createdAt: "desc" }, take: 8 }),
-      prisma.order.count({
-        where: { status: "installed", kind: "install", nextMaintenanceAt: { lte: dueLimit } },
-      }),
-      prisma.order.findMany({
-        where: { status: "installed", kind: "install", nextMaintenanceAt: { lte: dueLimit } },
-        orderBy: { nextMaintenanceAt: "asc" },
-        take: 8,
-      }),
-      prisma.review.count({ where: { status: "pending" } }),
-    ]);
+    await withDbRetry(() =>
+      Promise.all([
+        prisma.order.count({ where: { status: "pending" } }),
+        prisma.order.findMany({ where: { status: "pending" }, orderBy: { createdAt: "desc" }, take: 8 }),
+        prisma.product.findMany({ where: { inStock: true, stock: { lte: 5 } }, orderBy: { stock: "asc" }, take: 8 }),
+        prisma.contactMessage.count({ where: { read: false } }),
+        prisma.contactMessage.findMany({ where: { read: false }, orderBy: { createdAt: "desc" }, take: 8 }),
+        prisma.order.count({
+          where: { status: "installed", kind: "install", nextMaintenanceAt: { lte: dueLimit } },
+        }),
+        prisma.order.findMany({
+          where: { status: "installed", kind: "install", nextMaintenanceAt: { lte: dueLimit } },
+          orderBy: { nextMaintenanceAt: "asc" },
+          take: 8,
+        }),
+        prisma.review.count({ where: { status: "pending" } }),
+      ]),
+    );
   return {
     pendingCount,
     lowStockCount: low.length,
@@ -436,6 +439,7 @@ export type ProductInput = {
   shortDescription: string;
   description: string;
   price: number;
+  cost: number;
   oldPrice?: number | null;
   stages?: number | null;
   capacity?: string | null;
@@ -459,6 +463,7 @@ function toData(input: ProductInput) {
     shortDescription: input.shortDescription,
     description: input.description,
     price: input.price,
+    cost: input.cost ?? 0,
     oldPrice: input.oldPrice ?? null,
     stages: input.stages ?? null,
     capacity: input.capacity ?? null,
@@ -509,6 +514,8 @@ export async function createOrder(data: {
   note?: string;
   items: { productId: string; qty: number; variantLabel?: string }[];
   source?: "web" | "phone";
+  acquisitionSource?: string | null;
+  whatsappOptIn?: boolean;
 }): Promise<Order> {
   // validation
   const name = (data.customerName ?? "").trim();
@@ -590,6 +597,7 @@ export async function createOrder(data: {
         total,
         status: "pending",
         source: data.source === "phone" ? "phone" : "web",
+        acquisitionSource: data.acquisitionSource ?? null,
       },
     });
   });
@@ -601,6 +609,8 @@ export async function createOrder(data: {
     address,
     source: row.source,
     createdAt: row.createdAt,
+    acquisitionSource: data.acquisitionSource ?? null,
+    whatsappOptIn: data.whatsappOptIn ?? false,
   });
   await logActivity({
     actor: row.source === "phone" ? "staff" : "customer",
@@ -609,6 +619,22 @@ export async function createOrder(data: {
     summary: `New order ${row.id} — ${name}, ${city}`,
     meta: { total, city, name, source: row.source },
   });
+
+  // Audit: record a `sale` stock movement per product + keep inStock in sync.
+  // Post-commit and best-effort — must never block/break order creation.
+  try {
+    const actor = row.source === "phone" ? "staff" : "customer";
+    for (const [pid, qty] of qtyByProduct) {
+      const cur = await prisma.product.findUnique({ where: { id: pid }, select: { stock: true } });
+      if (!cur) continue;
+      await prisma.product.update({ where: { id: pid }, data: { inStock: cur.stock > 0 } });
+      await prisma.stockMovement.create({
+        data: { productId: pid, delta: -qty, before: cur.stock + qty, after: cur.stock, reason: "sale", note: row.id, actor },
+      });
+    }
+  } catch {
+    // audit-only; ignore
+  }
 
   return toOrder(row);
 }
@@ -642,6 +668,13 @@ export async function updateOrderStatus(
   return prisma.$transaction(async (tx) => {
     for (const [pid, qty] of qtyByProduct) {
       await tx.product.updateMany({ where: { id: pid }, data: { stock: { increment: qty } } });
+      const cur = await tx.product.findUnique({ where: { id: pid }, select: { stock: true } });
+      if (cur) {
+        await tx.product.update({ where: { id: pid }, data: { inStock: cur.stock > 0 } });
+        await tx.stockMovement.create({
+          data: { productId: pid, delta: qty, before: cur.stock - qty, after: cur.stock, reason: "return", note: id, actor: "staff" },
+        });
+      }
     }
     return tx.order.update({ where: { id }, data: { status, ...noteData } });
   });
@@ -1021,6 +1054,7 @@ export type SiteSettings = {
   announcement: string | null;
   freeDeliveryThreshold: number;
   deliveryFee: number;
+  confirmateurMonthly: number;
 };
 
 const DEFAULT_SETTINGS: SiteSettings = {
@@ -1039,6 +1073,7 @@ const DEFAULT_SETTINGS: SiteSettings = {
   announcement: null,
   freeDeliveryThreshold: 1000,
   deliveryFee: 40,
+  confirmateurMonthly: 0,
 };
 
 export async function getSettings(): Promise<SiteSettings> {
@@ -1060,6 +1095,7 @@ export async function getSettings(): Promise<SiteSettings> {
     announcement: row.announcement,
     freeDeliveryThreshold: row.freeDeliveryThreshold,
     deliveryFee: row.deliveryFee ?? DEFAULT_SETTINGS.deliveryFee,
+    confirmateurMonthly: row.confirmateurMonthly ?? 0,
   };
 }
 
@@ -1279,7 +1315,16 @@ export async function getRecentActivity(limit = 14): Promise<ActivityEntry[]> {
    Clients CRM — real customer directory (keyed by phone)
    ============================================================ */
 
-const normPhone = (p: string) => p.replace(/\s/g, "");
+// Canonical Moroccan phone: digits only, +212 / 212 / leading-0 all collapse to 0XXXXXXXXX.
+// No-op for already-local "0…" numbers (how checkout stores them), so existing rows are unaffected;
+// it just additionally groups any "+212"-formatted order onto the same customer.
+const normPhone = (p: string) => {
+  let d = (p || "").replace(/\D/g, ""); // strip spaces, +, dashes, parens
+  if (d.startsWith("00")) d = d.slice(2); // drop 00 international prefix
+  if (d.startsWith("212")) d = d.slice(3); // drop Morocco country code
+  if (d.startsWith("0")) d = d.slice(1); // drop trunk prefix
+  return d ? "0" + d : ""; // re-add the single local 0
+};
 
 /** Create/refresh the CRM record for an order's customer. Best-effort. */
 export async function upsertClientFromOrder(o: {
@@ -1289,6 +1334,8 @@ export async function upsertClientFromOrder(o: {
   address: string;
   source: string;
   createdAt: Date;
+  acquisitionSource?: string | null;
+  whatsappOptIn?: boolean;
 }): Promise<void> {
   const phone = normPhone(o.phone);
   try {
@@ -1300,15 +1347,19 @@ export async function upsertClientFromOrder(o: {
         city: o.city,
         address: o.address,
         source: o.source === "phone" ? "phone" : "web",
+        acquisitionSource: o.acquisitionSource ?? null,
+        whatsappOptIn: o.whatsappOptIn ?? false,
         firstOrderAt: o.createdAt,
       },
-      // refresh latest contact details but never touch status/note
-      update: { name: o.customerName, city: o.city, address: o.address },
+      // refresh latest contact details + consent (never touch status/note/acquisitionSource)
+      update: { name: o.customerName, city: o.city, address: o.address, ...(o.whatsappOptIn ? { whatsappOptIn: true } : {}) },
     });
   } catch {
     /* best-effort */
   }
 }
+
+export type ClientLifecycle = "lead" | "new" | "active" | "due" | "lost";
 
 export type ClientRow = {
   id: string;
@@ -1322,68 +1373,232 @@ export type ClientRow = {
   orderCount: number;
   totalSpent: number;
   lastOrderAt: string | null;
+  daysSinceLastOrder: number | null;
+  installCount: number; // installed devices (status=installed, kind=install)
+  nextMaintenanceAt: string | null; // soonest filter-change due date
+  maintenanceDue: boolean; // a maintenance is due / overdue now
+  lifecycle: ClientLifecycle;
+  isVip: boolean;
+  acquisitionSource: string | null; // marketing channel
+  whatsappOptIn: boolean; // consented to WhatsApp/SMS marketing
+  tags: string[];
 };
 
 type OrderAgg = { count: number; spent: number; last: Date | null };
+type InstallAgg = { installCount: number; nextDue: Date | null };
 
-function aggregateOrdersByPhone(
-  orders: { phone: string; total: number; status: string; createdAt: Date }[],
-): Map<string, OrderAgg> {
+const DAY_MS = 86_400_000;
+const VIP_MIN_SPENT = 10_000; // MAD realized
+const VIP_MIN_ORDERS = 4;
+const NEW_DAYS = 45;
+const LOST_OVERDUE_DAYS = 90; // maintenance overdue this long → treat as lost
+
+/** Lifecycle for a filter + ~6-month-SAV business — driven by install + maintenance state, not purchase frequency. */
+function lifecycleOf(realizedCount: number, installCount: number, nextDue: Date | null, firstOrderAt: Date): ClientLifecycle {
+  if (realizedCount === 0) return "lead"; // registered / pending, no confirmed sale yet
+  const ageDays = (Date.now() - firstOrderAt.getTime()) / DAY_MS;
+  if (installCount === 0) return ageDays <= NEW_DAYS ? "new" : "active"; // bought, not yet installed
+  if (nextDue) {
+    const overdueDays = (Date.now() - nextDue.getTime()) / DAY_MS;
+    if (overdueDays > LOST_OVERDUE_DAYS) return "lost"; // long overdue → likely lost the SAV
+    if (overdueDays > 0) return "due"; // due / overdue → call for the filter change
+  }
+  return ageDays <= NEW_DAYS ? "new" : "active";
+}
+
+/** Per-phone installed-device count + soonest maintenance-due date. */
+async function loadInstallData(): Promise<Map<string, InstallAgg>> {
+  const rows = await prisma.order.groupBy({
+    by: ["phone"],
+    where: { status: "installed", kind: "install" },
+    _count: { _all: true },
+    _min: { nextMaintenanceAt: true },
+  });
+  const m = new Map<string, InstallAgg>();
+  for (const r of rows) {
+    const key = normPhone(r.phone);
+    const cur = m.get(key) ?? { installCount: 0, nextDue: null };
+    cur.installCount += r._count._all ?? 0;
+    const nd = r._min.nextMaintenanceAt;
+    if (nd && (!cur.nextDue || nd < cur.nextDue)) cur.nextDue = nd;
+    m.set(key, cur);
+  }
+  return m;
+}
+
+/** Aggregate REALIZED purchases (confirmed/installed install orders, excluding free maintenance
+ *  visits and cancelled/pending) per normalized phone — one DB-side groupBy, not a full table load. */
+async function loadOrderAggregates(): Promise<Map<string, OrderAgg>> {
+  const rows = await prisma.order.groupBy({
+    by: ["phone"],
+    where: { status: { in: SALE_STATUSES }, kind: "install" },
+    _count: { _all: true },
+    _sum: { total: true },
+    _max: { createdAt: true },
+  });
   const agg = new Map<string, OrderAgg>();
-  for (const o of orders) {
-    const key = normPhone(o.phone);
+  for (const r of rows) {
+    const key = normPhone(r.phone);
     const a = agg.get(key) ?? { count: 0, spent: 0, last: null };
-    a.count += 1;
-    if (SALE_STATUSES.includes(o.status)) a.spent += o.total; // realized spend only
-    if (!a.last || o.createdAt > a.last) a.last = o.createdAt;
+    a.count += r._count._all ?? 0;
+    a.spent += r._sum.total ?? 0;
+    const last = r._max.createdAt;
+    if (last && (!a.last || last > a.last)) a.last = last;
     agg.set(key, a);
   }
   return agg;
 }
 
-/** Full client directory with live order aggregates (newest customers first). */
-export async function getClientsList(): Promise<ClientRow[]> {
-  const [clients, orders] = await Promise.all([
-    prisma.client.findMany({ orderBy: { firstOrderAt: "desc" } }),
-    prisma.order.findMany({ select: { phone: true, total: true, status: true, createdAt: true } }),
-  ]);
-  const agg = aggregateOrdersByPhone(orders);
-  return clients.map((c) => {
-    const a = agg.get(c.phone) ?? { count: 0, spent: 0, last: null };
-    return {
-      id: c.id,
-      phone: c.phone,
-      name: c.name,
-      city: c.city,
-      email: c.email,
-      status: c.status,
-      source: c.source,
-      firstOrderAt: c.firstOrderAt.toISOString(),
-      orderCount: a.count,
-      totalSpent: a.spent,
-      lastOrderAt: a.last?.toISOString() ?? null,
-    };
-  });
+function rowFromClient(
+  c: { id: string; phone: string; name: string; city: string; email: string | null; status: string; source: string; firstOrderAt: Date; tags: string[]; acquisitionSource: string | null; whatsappOptIn: boolean },
+  a: OrderAgg,
+  inst: InstallAgg,
+): ClientRow {
+  const daysSince = a.last ? Math.floor((Date.now() - a.last.getTime()) / DAY_MS) : null;
+  return {
+    id: c.id,
+    phone: c.phone,
+    name: c.name,
+    city: c.city,
+    email: c.email,
+    status: c.status,
+    source: c.source,
+    firstOrderAt: c.firstOrderAt.toISOString(),
+    orderCount: a.count,
+    totalSpent: a.spent,
+    lastOrderAt: a.last?.toISOString() ?? null,
+    daysSinceLastOrder: daysSince,
+    installCount: inst.installCount,
+    nextMaintenanceAt: inst.nextDue?.toISOString() ?? null,
+    maintenanceDue: inst.nextDue ? inst.nextDue.getTime() <= Date.now() : false,
+    lifecycle: lifecycleOf(a.count, inst.installCount, inst.nextDue, c.firstOrderAt),
+    isVip: a.spent >= VIP_MIN_SPENT || a.count >= VIP_MIN_ORDERS,
+    acquisitionSource: c.acquisitionSource,
+    whatsappOptIn: c.whatsappOptIn,
+    tags: c.tags,
+  };
 }
+
+/** Full client directory with live order aggregates + install/maintenance lifecycle (newest first). */
+export async function getClientsList(): Promise<ClientRow[]> {
+  const [clients, agg, inst] = await Promise.all([
+    prisma.client.findMany({ orderBy: { firstOrderAt: "desc" } }),
+    loadOrderAggregates(),
+    loadInstallData(),
+  ]);
+  const EMPTY_AGG: OrderAgg = { count: 0, spent: 0, last: null };
+  const EMPTY_INST: InstallAgg = { installCount: 0, nextDue: null };
+  return clients.map((c) => rowFromClient(c, agg.get(c.phone) ?? EMPTY_AGG, inst.get(c.phone) ?? EMPTY_INST));
+}
+
+/** A single entry in a client's merged history feed (orders + maintenance + invoices + notes + reviews). */
+export type ClientTimelineEvent = {
+  id: string;
+  type: "order" | "maintenance" | "invoice" | "note" | "review";
+  date: string;
+  title: string; // order id / facture ref / note body / review comment
+  amount: number | null;
+  status: string | null;
+  href: string | null;
+};
+
+export type ClientNoteRow = { id: string; body: string; author: string; createdAt: string };
+
+export type ClientDevice = {
+  id: string;
+  model: string;
+  installedAt: string | null;
+  warrantyUntil: string | null;
+  nextMaintenanceAt: string | null;
+  due: boolean;
+};
 
 export type ClientDetail = ClientRow & {
   address: string | null;
   note: string | null;
   avgBasket: number;
   orders: { id: string; total: number; status: string; createdAt: string }[];
+  notes: ClientNoteRow[];
+  devices: ClientDevice[];
+  contact: { lastOutcome: string | null; callAttempts: number };
+  timeline: ClientTimelineEvent[];
 };
 
 export async function getClientDetail(phone: string): Promise<ClientDetail | null> {
   const key = normPhone(phone);
   const c = await prisma.client.findUnique({ where: { phone: key } });
   if (!c) return null;
-  const orders = await prisma.order.findMany({
-    where: { phone: key },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, total: true, status: true, createdAt: true },
+  const [orders, invoices, notes] = await Promise.all([
+    prisma.order.findMany({
+      where: { phone: key },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, total: true, status: true, kind: true, createdAt: true, nextMaintenanceAt: true, items: true, completedAt: true, warrantyMonths: true, lastOutcome: true, callAttempts: true },
+    }),
+    prisma.invoice.findMany({
+      where: { customerPhone: key },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, ref: true, total: true, status: true, createdAt: true },
+    }),
+    prisma.clientNote.findMany({
+      where: { clientPhone: key },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, body: true, author: true, createdAt: true },
+    }),
+  ]);
+  const purchases = orders.filter((o) => SALE_STATUSES.includes(o.status) && o.kind !== "maintenance");
+  const totalSpent = purchases.reduce((s, o) => s + o.total, 0);
+  const purchaseCount = purchases.length;
+  const lastPurchase = purchases[0]?.createdAt ?? null; // orders are desc → first purchase is most recent
+  const daysSince = lastPurchase ? Math.floor((Date.now() - lastPurchase.getTime()) / DAY_MS) : null;
+  const installs = orders.filter((o) => o.status === "installed" && o.kind === "install");
+  let nextDue: Date | null = null;
+  for (const o of installs) if (o.nextMaintenanceAt && (!nextDue || o.nextMaintenanceAt < nextDue)) nextDue = o.nextMaintenanceAt;
+  const devices = installs.map((o) => {
+    const items = Array.isArray(o.items) ? (o.items as { name?: string }[]) : [];
+    const model = items.map((i) => i?.name).filter(Boolean).join(", ") || "—";
+    const warrantyUntil = o.completedAt ? addMonths(o.completedAt, o.warrantyMonths ?? 24) : null;
+    return {
+      id: o.id,
+      model,
+      installedAt: o.completedAt?.toISOString() ?? null,
+      warrantyUntil: warrantyUntil?.toISOString() ?? null,
+      nextMaintenanceAt: o.nextMaintenanceAt?.toISOString() ?? null,
+      due: o.nextMaintenanceAt ? o.nextMaintenanceAt.getTime() <= Date.now() : false,
+    };
   });
-  const realized = orders.filter((o) => SALE_STATUSES.includes(o.status));
-  const totalSpent = realized.reduce((s, o) => s + o.total, 0);
+  const lastOutcome = orders.find((o) => o.lastOutcome)?.lastOutcome ?? null;
+  const callAttempts = orders.reduce((s, o) => s + (o.callAttempts ?? 0), 0);
+
+  const timeline: ClientTimelineEvent[] = [
+    ...orders.map((o) => ({
+      id: o.id,
+      type: (o.kind === "maintenance" ? "maintenance" : "order") as "order" | "maintenance",
+      date: o.createdAt.toISOString(),
+      title: o.id,
+      amount: o.total,
+      status: o.status,
+      href: `/admin/orders/${o.id}`,
+    })),
+    ...invoices.map((inv) => ({
+      id: inv.id,
+      type: "invoice" as const,
+      date: inv.createdAt.toISOString(),
+      title: inv.ref,
+      amount: inv.total,
+      status: inv.status,
+      href: `/admin/factures/${inv.id}`,
+    })),
+    ...notes.map((n) => ({
+      id: n.id,
+      type: "note" as const,
+      date: n.createdAt.toISOString(),
+      title: n.body,
+      amount: null,
+      status: null,
+      href: null,
+    })),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
   return {
     id: c.id,
     phone: c.phone,
@@ -1395,42 +1610,81 @@ export async function getClientDetail(phone: string): Promise<ClientDetail | nul
     firstOrderAt: c.firstOrderAt.toISOString(),
     address: c.address,
     note: c.note,
-    orderCount: orders.length,
+    orderCount: purchaseCount,
     totalSpent,
-    lastOrderAt: orders[0]?.createdAt.toISOString() ?? null,
-    avgBasket: realized.length ? Math.round(totalSpent / realized.length) : 0,
+    lastOrderAt: lastPurchase?.toISOString() ?? null,
+    daysSinceLastOrder: daysSince,
+    installCount: installs.length,
+    nextMaintenanceAt: nextDue?.toISOString() ?? null,
+    maintenanceDue: nextDue ? nextDue.getTime() <= Date.now() : false,
+    lifecycle: lifecycleOf(purchaseCount, installs.length, nextDue, c.firstOrderAt),
+    isVip: totalSpent >= VIP_MIN_SPENT || purchaseCount >= VIP_MIN_ORDERS,
+    acquisitionSource: c.acquisitionSource,
+    whatsappOptIn: c.whatsappOptIn,
+    avgBasket: purchaseCount ? Math.round(totalSpent / purchaseCount) : 0,
     orders: orders.slice(0, 8).map((o) => ({
       id: o.id,
       total: o.total,
       status: o.status,
       createdAt: o.createdAt.toISOString(),
     })),
+    tags: c.tags,
+    notes: notes.map((n) => ({ id: n.id, body: n.body, author: n.author, createdAt: n.createdAt.toISOString() })),
+    devices,
+    contact: { lastOutcome, callAttempts },
+    timeline,
   };
 }
 
 export type ClientSegments = {
   total: number;
-  active: number;
-  inactive: number;
-  withOrders: number;
+  acheteurs: number; // clients with a realized purchase (orderCount > 0)
+  installed: number; // clients with an installed device (installCount > 0)
   newThisMonth: number;
   revenue: number;
+  // lifecycle chip counts (maintenance model)
+  leads: number;
+  newCount: number;
+  active: number;
+  due: number; // maintenance due / overdue — "à entretenir"
+  lost: number;
+  vip: number;
+  consentCount: number; // clients opted in to WhatsApp/SMS
   byCity: { city: string; count: number }[];
+  byChannel: { channel: string; count: number }[]; // acquisition source mix
   topSpenders: { name: string; phone: string; spent: number }[];
   newClients: { name: string; phone: string; firstOrderAt: string }[];
 };
 
-/** KPI + chart data for the Clients page header and bottom widgets. */
-export async function getClientSegments(): Promise<ClientSegments> {
-  const list = await getClientsList();
+/** KPI + chart data for the Clients page header and bottom widgets.
+ *  Pass an already-fetched list to avoid re-querying (the page fetches it once). */
+export async function getClientSegments(list?: ClientRow[]): Promise<ClientSegments> {
+  list = list ?? (await getClientsList());
   const now = new Date();
   const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 
   const total = list.length;
-  const active = list.filter((c) => c.status === "active").length;
-  const withOrders = list.filter((c) => c.orderCount > 0).length;
+  const acheteurs = list.filter((c) => c.orderCount > 0).length;
+  const installed = list.filter((c) => c.installCount > 0).length;
   const newThisMonth = list.filter((c) => new Date(c.firstOrderAt).getTime() >= startMonth).length;
   const revenue = list.reduce((s, c) => s + c.totalSpent, 0);
+
+  const leads = list.filter((c) => c.lifecycle === "lead").length;
+  const newCount = list.filter((c) => c.lifecycle === "new").length;
+  const active = list.filter((c) => c.lifecycle === "active").length;
+  const due = list.filter((c) => c.lifecycle === "due").length;
+  const lost = list.filter((c) => c.lifecycle === "lost").length;
+  const vip = list.filter((c) => c.isVip).length;
+  const consentCount = list.filter((c) => c.whatsappOptIn).length;
+
+  const channelMap = new Map<string, number>();
+  for (const c of list) {
+    const k = c.acquisitionSource || "__unknown__";
+    channelMap.set(k, (channelMap.get(k) ?? 0) + 1);
+  }
+  const byChannel = [...channelMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([channel, count]) => ({ channel, count }));
 
   const cityMap = new Map<string, number>();
   for (const c of list) {
@@ -1453,12 +1707,19 @@ export async function getClientSegments(): Promise<ClientSegments> {
 
   return {
     total,
-    active,
-    inactive: total - active,
-    withOrders,
+    acheteurs,
+    installed,
     newThisMonth,
     revenue,
+    leads,
+    newCount,
+    active,
+    due,
+    lost,
+    vip,
+    consentCount,
     byCity,
+    byChannel,
     topSpenders,
     newClients,
   };
@@ -1473,6 +1734,56 @@ export async function updateClient(
   data: { name?: string; city?: string; email?: string | null; address?: string | null; note?: string | null },
 ): Promise<void> {
   await prisma.client.update({ where: { phone: normPhone(phone) }, data });
+}
+
+/** Manually create a client / lead — used by the admin "New client" form. */
+export async function createClient(data: {
+  phone: string;
+  name: string;
+  city?: string;
+  email?: string | null;
+  address?: string | null;
+  note?: string | null;
+}): Promise<{ ok: true; phone: string } | { ok: false; error: string }> {
+  const phone = normPhone(data.phone);
+  if (!/^0[5-7]\d{8}$/.test(phone)) return { ok: false, error: "INVALID_PHONE" }; // same shape as order phones, so it dedupes/aggregates
+  const existing = await prisma.client.findUnique({ where: { phone } });
+  if (existing) return { ok: false, error: "EXISTS" };
+  await prisma.client.create({
+    data: {
+      phone,
+      name: data.name.trim(),
+      city: data.city?.trim() ?? "",
+      email: data.email?.trim() || null,
+      address: data.address?.trim() || null,
+      note: data.note?.trim() || null,
+      source: "phone",
+      firstOrderAt: new Date(),
+    },
+  });
+  return { ok: true, phone };
+}
+
+/** Append a timestamped note to a client's activity log. */
+export async function addClientNote(phone: string, body: string, author: string): Promise<ClientNoteRow> {
+  const n = await prisma.clientNote.create({
+    data: { clientPhone: normPhone(phone), body: body.trim(), author },
+  });
+  return { id: n.id, body: n.body, author: n.author, createdAt: n.createdAt.toISOString() };
+}
+
+/** Replace a client's tag set (deduped, trimmed, capped). */
+export async function setClientTags(phone: string, tags: string[]): Promise<string[]> {
+  const clean = [...new Set(tags.map((t) => t.trim()).filter(Boolean))].slice(0, 12);
+  await prisma.client.update({ where: { phone: normPhone(phone) }, data: { tags: clean } });
+  return clean;
+}
+
+/** Resolve a client's full detail by id (for the deep-link /admin/clients/[id] page). */
+export async function getClientDetailById(id: string): Promise<ClientDetail | null> {
+  const c = await prisma.client.findUnique({ where: { id }, select: { phone: true } });
+  if (!c) return null;
+  return getClientDetail(c.phone);
 }
 
 /* ============================================================
@@ -1880,6 +2191,139 @@ export async function getFinanceSummary(): Promise<FinanceSummary> {
   };
 }
 
+/* ---------- Profit & Loss (true net profit) ----------
+   Revenue counts ONLY realized (installed) sales, bucketed by install date.
+   Gross profit = revenue − technician commission (per install).
+   Net profit  = gross − confirmateur (fixed monthly) − operating expenses. */
+
+export type PnLLine = {
+  revenue: number;
+  cogs: number; // product purchase cost of realized sales
+  techCommission: number;
+  grossProfit: number;
+  confirmateur: number;
+  opex: number;
+  netProfit: number;
+};
+
+export type CommissionLine = { name: string; installs: number; rate: number; total: number };
+
+export type FinancePnL = {
+  month: PnLLine;
+  lastMonth: PnLLine;
+  year: PnLLine;
+  pipeline: number; // confirmed, not yet installed (not counted as profit)
+  confirmateurMonthly: number;
+  byCategoryMonth: { category: string; amount: number }[];
+  commissionsMonth: CommissionLine[];
+};
+
+export async function getFinancePnL(): Promise<FinancePnL> {
+  const now = new Date();
+  const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const startYear = new Date(now.getFullYear(), 0, 1);
+  const monthsElapsed = now.getMonth() + 1;
+
+  const settings = await getSettings();
+  const confMonthly = settings.confirmateurMonthly;
+
+  const plombiers = await withDbRetry(() =>
+    prisma.adminUser.findMany({ where: { role: "plombier" }, select: { email: true, name: true, commissionPerInstall: true } }),
+  );
+
+  const products = await withDbRetry(() => prisma.product.findMany({ select: { id: true, cost: true } }));
+  const costById = new Map(products.map((p) => [p.id, p.cost]));
+
+  // COGS = product purchase cost of realized (installed) sales in the period.
+  async function cogs(start: Date, end?: Date): Promise<number> {
+    const orders = await withDbRetry(() =>
+      prisma.order.findMany({
+        where: { status: "installed", kind: "install", completedAt: { gte: start, ...(end ? { lt: end } : {}) } },
+        select: { items: true },
+      }),
+    );
+    let sum = 0;
+    for (const o of orders) {
+      const items = (o.items as unknown as { productId?: string; qty?: number }[]) ?? [];
+      for (const it of items) {
+        const c = it.productId ? costById.get(it.productId) ?? 0 : 0;
+        sum += c * (it.qty ?? 0);
+      }
+    }
+    return sum;
+  }
+
+  async function revenue(start: Date, end?: Date): Promise<number> {
+    const r = await withDbRetry(() =>
+      prisma.order.aggregate({ _sum: { total: true }, where: { status: "installed", kind: "install", completedAt: { gte: start, ...(end ? { lt: end } : {}) } } }),
+    );
+    return r._sum.total ?? 0;
+  }
+
+  async function commissions(start: Date, end?: Date): Promise<{ lines: CommissionLine[]; total: number }> {
+    const rows = await withDbRetry(() =>
+      prisma.order.findMany({
+        where: { status: "installed", assignedTo: { not: null }, kind: "install", completedAt: { gte: start, ...(end ? { lt: end } : {}) } },
+        select: { assignedTo: true },
+      }),
+    );
+    const byTech = new Map<string, number>();
+    for (const o of rows) if (o.assignedTo) byTech.set(o.assignedTo, (byTech.get(o.assignedTo) ?? 0) + 1);
+    const lines = plombiers
+      .map((p) => {
+        const installs = byTech.get(p.email) ?? 0;
+        return { name: p.name ?? p.email, installs, rate: p.commissionPerInstall, total: installs * p.commissionPerInstall };
+      })
+      .filter((l) => l.installs > 0)
+      .sort((a, b) => b.total - a.total);
+    return { lines, total: lines.reduce((s, l) => s + l.total, 0) };
+  }
+
+  async function opex(start: Date, end?: Date): Promise<number> {
+    const r = await withDbRetry(() =>
+      prisma.expense.aggregate({ _sum: { amount: true }, where: { date: { gte: start, ...(end ? { lt: end } : {}) } } }),
+    );
+    return r._sum.amount ?? 0;
+  }
+
+  function pnl(rev: number, cogsV: number, comm: number, conf: number, op: number): PnLLine {
+    const grossProfit = rev - cogsV - comm;
+    return { revenue: rev, cogs: cogsV, techCommission: comm, grossProfit, confirmateur: conf, opex: op, netProfit: grossProfit - conf - op };
+  }
+
+  const [revM, revLM, revY] = await Promise.all([revenue(startMonth), revenue(startLastMonth, startMonth), revenue(startYear)]);
+  const [cogsM, cogsLM, cogsY] = await Promise.all([cogs(startMonth), cogs(startLastMonth, startMonth), cogs(startYear)]);
+  const [commM, commLM, commY] = await Promise.all([commissions(startMonth), commissions(startLastMonth, startMonth), commissions(startYear)]);
+  const [opM, opLM, opY] = await Promise.all([opex(startMonth), opex(startLastMonth, startMonth), opex(startYear)]);
+
+  const pipeAgg = await withDbRetry(() => prisma.order.aggregate({ _sum: { total: true }, where: { status: "confirmed" } }));
+  const pipeline = pipeAgg._sum.total ?? 0;
+
+  const expRows = await withDbRetry(() =>
+    prisma.expense.findMany({ where: { date: { gte: startMonth } }, select: { amount: true, category: true } }),
+  );
+  const catMap = new Map<string, number>();
+  for (const e of expRows) catMap.set(e.category, (catMap.get(e.category) ?? 0) + e.amount);
+  const byCategoryMonth = [...catMap.entries()].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+
+  return {
+    month: pnl(revM, cogsM, commM.total, confMonthly, opM),
+    lastMonth: pnl(revLM, cogsLM, commLM.total, confMonthly, opLM),
+    year: pnl(revY, cogsY, commY.total, confMonthly * monthsElapsed, opY),
+    pipeline,
+    confirmateurMonthly: confMonthly,
+    byCategoryMonth,
+    commissionsMonth: commM.lines,
+  };
+}
+
+export async function setConfirmateurMonthly(amount: number): Promise<void> {
+  if (!Number.isFinite(amount)) throw new Error("Invalid amount");
+  const v = Math.max(0, Math.round(amount));
+  await withDbRetry(() => updateSettings({ confirmateurMonthly: v }));
+}
+
 /* ============================================================
    Stock (inventory) — you hold the stock
    ============================================================ */
@@ -1889,49 +2333,137 @@ export type StockRow = {
   name: string;
   categorySlug: string;
   stock: number;
+  reorderPoint: number;
   price: number;
   value: number;
   allowBackorder: boolean;
+  image?: string;
+  hue: number;
 };
 
 export async function getStockList(): Promise<StockRow[]> {
-  const rows = await prisma.product.findMany({
-    orderBy: { stock: "asc" },
-    select: { id: true, name: true, categorySlug: true, stock: true, price: true, allowBackorder: true },
-  });
+  const rows = await withDbRetry(() =>
+    prisma.product.findMany({
+      orderBy: { stock: "asc" },
+      select: { id: true, name: true, categorySlug: true, stock: true, reorderPoint: true, price: true, allowBackorder: true, images: true, hue: true },
+    }),
+  );
   return rows.map((p) => ({
     id: p.id,
     name: p.name,
     categorySlug: p.categorySlug,
     stock: p.stock,
+    reorderPoint: p.reorderPoint,
     price: p.price,
     value: p.stock * p.price,
     allowBackorder: p.allowBackorder,
+    image: p.images[0],
+    hue: p.hue,
   }));
 }
 
 export type StockSummary = {
   totalUnits: number;
   totalValue: number;
-  lowCount: number;
-  outCount: number;
+  reorderCount: number; // at or below reorder point (excludes backorder-friendly)
+  outCount: number; // at 0 (excludes backorder-friendly)
   skuCount: number;
 };
 
 export async function getStockSummary(): Promise<StockSummary> {
-  const rows = await prisma.product.findMany({ select: { stock: true, price: true } });
+  const rows = await withDbRetry(() =>
+    prisma.product.findMany({ select: { stock: true, price: true, reorderPoint: true, allowBackorder: true } }),
+  );
   return {
     totalUnits: rows.reduce((s, p) => s + p.stock, 0),
     totalValue: rows.reduce((s, p) => s + p.stock * p.price, 0),
-    lowCount: rows.filter((p) => p.stock > 0 && p.stock <= 5).length,
-    outCount: rows.filter((p) => p.stock <= 0).length,
+    reorderCount: rows.filter((p) => p.stock <= p.reorderPoint && !p.allowBackorder).length,
+    outCount: rows.filter((p) => p.stock <= 0 && !p.allowBackorder).length,
     skuCount: rows.length,
   };
 }
 
-export async function setProductStock(id: string, stock: number): Promise<void> {
-  const s = Math.max(0, Math.round(stock));
-  await prisma.product.update({ where: { id }, data: { stock: s, inStock: s > 0 } });
+/* --- Stock mutations: every change writes a StockMovement (audit log) --- */
+
+export const STOCK_REASONS = ["received", "return", "damaged", "correction"] as const;
+export type StockReason = (typeof STOCK_REASONS)[number];
+
+export type StockMovementRow = {
+  id: string;
+  delta: number;
+  before: number;
+  after: number;
+  reason: string;
+  note: string | null;
+  actor: string | null;
+  createdAt: string;
+};
+
+/** Core: atomically change a product's stock and log the movement. */
+async function applyStockChange(
+  id: string,
+  reason: string,
+  nextStock: (before: number) => number,
+  note: string | undefined,
+  actor: string | undefined,
+): Promise<{ before: number; after: number }> {
+  return withDbRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const p = await tx.product.findUnique({ where: { id }, select: { stock: true } });
+      if (!p) throw new Error("Product not found");
+      const before = p.stock;
+      const raw = nextStock(before);
+      if (!Number.isFinite(raw)) throw new Error("Invalid stock value");
+      const after = Math.max(0, Math.round(raw));
+      const delta = after - before;
+      await tx.product.update({ where: { id }, data: { stock: after, inStock: after > 0 } });
+      await tx.stockMovement.create({
+        data: { productId: id, delta, before, after, reason, note: note?.trim() || null, actor: actor || null },
+      });
+      return { before, after };
+    }),
+  );
+}
+
+/** Admin adjustment: received/return add, damaged removes, correction sets the exact total. */
+export async function applyStockAdjustment(
+  id: string,
+  reason: StockReason,
+  qty: number,
+  note: string | undefined,
+  actor: string,
+): Promise<{ before: number; after: number }> {
+  if (!Number.isFinite(qty)) throw new Error("Invalid quantity");
+  const q = Math.abs(Math.round(qty));
+  const nextStock =
+    reason === "correction"
+      ? () => q
+      : reason === "damaged"
+        ? (b: number) => b - q
+        : (b: number) => b + q; // received | return
+  return applyStockChange(id, reason, nextStock, note, actor);
+}
+
+export async function setReorderPoint(id: string, value: number): Promise<void> {
+  if (!Number.isFinite(value)) throw new Error("Invalid reorder point");
+  const v = Math.max(0, Math.round(value));
+  await withDbRetry(() => prisma.product.update({ where: { id }, data: { reorderPoint: v } }));
+}
+
+export async function getStockMovements(productId: string, limit = 30): Promise<StockMovementRow[]> {
+  const rows = await withDbRetry(() =>
+    prisma.stockMovement.findMany({ where: { productId }, orderBy: { createdAt: "desc" }, take: limit }),
+  );
+  return rows.map((m) => ({
+    id: m.id,
+    delta: m.delta,
+    before: m.before,
+    after: m.after,
+    reason: m.reason,
+    note: m.note,
+    actor: m.actor,
+    createdAt: m.createdAt.toISOString(),
+  }));
 }
 
 export type ConfirmateurPerf = {

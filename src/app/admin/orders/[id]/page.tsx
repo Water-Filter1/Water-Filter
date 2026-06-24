@@ -11,8 +11,10 @@ import {
 import { getOrderById, getInvoiceByOrderId } from "@/lib/data";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { OrderFactureButton } from "@/components/admin/order-facture-button";
-import { formatMAD, formatDate, waNumber } from "@/lib/utils";
+import { formatMAD, formatDate, waNumber, cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { buttonVariants } from "@/components/ui/button";
 import { Table, TableBody, TableRow, TableCell } from "@/components/ui/table";
 import { getT } from "@/i18n/server";
 
@@ -31,14 +33,14 @@ export default async function AdminOrderDetailPage({
 
   const [{ t }, invoice] = await Promise.all([getT(), getInvoiceByOrderId(id)]);
 
+  const parts = order.customerName.trim().split(/\s+/).filter(Boolean);
+  const initials = (parts.length > 1 ? `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}` : (parts[0] ?? "?").slice(0, 2)).toUpperCase();
+
   return (
-    <div>
+    <div className="mx-auto max-w-5xl font-semibold">
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
-        <Link
-          href="/admin/orders"
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-ink hover:bg-slate-50"
-        >
+        <Link href="/admin/orders" className={buttonVariants({ variant: "outline", size: "icon" })}>
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div className="flex-1">
@@ -63,7 +65,7 @@ export default async function AdminOrderDetailPage({
                 {order.items.map((it, i) => (
                   <TableRow key={i}>
                     <TableCell>
-                      <p className="font-medium text-ink" dir="auto">{it.name}</p>
+                      <p className="font-semibold text-ink" dir="auto">{it.name}</p>
                       {it.variantLabel && (
                         <p className="text-xs text-ink-soft">{it.variantLabel}</p>
                       )}
@@ -85,60 +87,66 @@ export default async function AdminOrderDetailPage({
           </Card>
 
           {order.note && (
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <Card className="gap-0 p-5">
               <h3 className="flex items-center gap-2 font-semibold text-ink">
                 <StickyNote className="h-4 w-4 text-brand-500" /> {t("admin.orderDetail.customerNote")}
               </h3>
               <p className="mt-2 text-sm text-ink-soft" dir="auto">{order.note}</p>
-            </section>
+            </Card>
           )}
 
           {order.confirmationNote && (
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <Card className="gap-0 p-5">
               <h3 className="font-semibold text-ink">{t("admin.orderDetail.confirmationNote")}</h3>
               <p className="mt-2 text-sm text-ink-soft" dir="auto">{order.confirmationNote}</p>
-            </section>
+            </Card>
           )}
         </div>
 
         {/* Right: customer + tracking (read-only) */}
         <aside className="space-y-6">
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <Card className="gap-0 p-5">
             <h3 className="font-display font-bold text-ink">{t("admin.orderDetail.customer")}</h3>
-            <p className="mt-3 font-semibold text-ink" dir="auto">{order.customerName}</p>
-            <div className="mt-1 flex items-center gap-2 text-sm text-ink-soft">
-              <Phone className="h-4 w-4" /> {order.phone}
+            <div className="mt-3 flex items-center gap-3">
+              <Avatar className="h-11 w-11">
+                <AvatarFallback className="bg-brand-100 font-bold text-brand-700">{initials}</AvatarFallback>
+              </Avatar>
+              <p className="font-semibold text-ink" dir="auto">{order.customerName}</p>
             </div>
-            <div className="mt-2 flex items-start gap-2 text-sm text-ink-soft">
-              <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
-              <span dir="auto">{order.address}, {order.city}</span>
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center gap-2 text-sm text-ink-soft">
+                <Phone className="h-4 w-4 shrink-0 text-brand-500" /> <span dir="ltr">{order.phone}</span>
+              </div>
+              <div className="flex items-start gap-2 text-sm text-ink-soft">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />
+                <span dir="auto">{order.address}, {order.city}</span>
+              </div>
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <a
-                href={`tel:${order.phone}`}
-                className="flex items-center justify-center gap-2 rounded-full bg-brand-500 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-600"
-              >
+              <a href={`tel:${order.phone}`} className={cn(buttonVariants({ variant: "primary" }), "w-full")}>
                 <Phone className="h-4 w-4" /> {t("admin.orderDetail.call")}
               </a>
               <a
                 href={`https://wa.me/${waNumber(order.phone)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 rounded-full bg-[#25D366] py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
+                className={cn(buttonVariants({ variant: "whatsapp" }), "w-full")}
               >
                 <MessageCircle className="h-4 w-4" /> WhatsApp
               </a>
             </div>
-          </section>
+          </Card>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <Card className="gap-0 p-5">
             <h3 className="font-display font-bold text-ink">{t("admin.orderDetail.payment")}</h3>
-            <div className="mt-3 flex items-center gap-2 rounded-xl bg-brand-50 p-3 text-sm">
-              <Banknote className="h-5 w-5 text-brand-600" />
-              <span className="font-medium text-ink">{t("admin.orderDetail.cod")}</span>
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-brand-50 p-3">
+              <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+                <Banknote className="h-5 w-5 text-brand-600" /> {t("admin.orderDetail.cod")}
+              </span>
+              <span className="font-display font-extrabold text-brand-700">{formatMAD(order.total)}</span>
             </div>
-          </section>
+          </Card>
 
           {/* Suivi (confirmation + installation) — read-only */}
           {(order.confirmedAt ||
@@ -146,25 +154,25 @@ export default async function AdminOrderDetailPage({
             order.assignedTo ||
             order.completedAt ||
             order.source === "phone") && (
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <Card className="gap-0 p-5">
               <h3 className="font-display font-bold text-ink">{t("admin.orderDetail.tracking")}</h3>
               <dl className="mt-3 space-y-2 text-sm">
                 <div className="flex justify-between gap-3">
                   <dt className="text-ink-soft">{t("admin.orderDetail.source")}</dt>
-                  <dd className="font-medium text-ink">
+                  <dd className="font-semibold text-ink">
                     {order.source === "phone" ? t("admin.orderDetail.sourcePhone") : t("admin.orderDetail.sourceWeb")}
                   </dd>
                 </div>
                 {order.confirmedAt && (
                   <div className="flex justify-between gap-3">
                     <dt className="text-ink-soft">{t("admin.orderDetail.confirmedOn")}</dt>
-                    <dd className="font-medium text-ink">{formatDate(order.confirmedAt)}</dd>
+                    <dd className="font-semibold text-ink">{formatDate(order.confirmedAt)}</dd>
                   </div>
                 )}
                 {order.installDate && (
                   <div className="flex justify-between gap-3">
                     <dt className="text-ink-soft">{t("admin.orderDetail.plannedInstall")}</dt>
-                    <dd className="text-end font-medium text-ink">
+                    <dd className="text-end font-semibold text-ink">
                       {new Date(order.installDate).toLocaleString("fr-MA", {
                         day: "numeric",
                         month: "short",
@@ -178,13 +186,13 @@ export default async function AdminOrderDetailPage({
                 {order.assignedTo && (
                   <div className="flex justify-between gap-3">
                     <dt className="text-ink-soft">{t("admin.orderDetail.technician")}</dt>
-                    <dd className="break-all font-medium text-ink">{order.assignedTo}</dd>
+                    <dd className="break-all font-semibold text-ink">{order.assignedTo}</dd>
                   </div>
                 )}
                 {order.completedAt && (
                   <div className="flex justify-between gap-3">
                     <dt className="text-ink-soft">{t("admin.orderDetail.installedOn")}</dt>
-                    <dd className="font-medium text-emerald-600">{formatDate(order.completedAt)}</dd>
+                    <dd className="font-semibold text-emerald-600">{formatDate(order.completedAt)}</dd>
                   </div>
                 )}
               </dl>
@@ -202,12 +210,12 @@ export default async function AdminOrderDetailPage({
                     alt={t("admin.orderDetail.installationPhotoAlt")}
                     className="h-40 w-full object-cover"
                   />
-                  <span className="block bg-slate-50 px-3 py-2 text-xs font-medium text-brand-600">
+                  <span className="block bg-slate-50 px-3 py-2 text-xs font-semibold text-brand-600">
                     {t("admin.orderDetail.viewInstallationPhoto")}
                   </span>
                 </a>
               )}
-            </section>
+            </Card>
           )}
         </aside>
       </div>

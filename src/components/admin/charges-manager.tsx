@@ -2,31 +2,89 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Banknote, Wallet, TrendingUp, CalendarRange, Plus, Loader2, Trash2 } from "lucide-react";
+import { Banknote, TrendingUp, Wallet, Hourglass, Plus, Loader2, Trash2, Users } from "lucide-react";
 import { useI18n } from "@/i18n/i18n-context";
-import { formatMAD, formatDate } from "@/lib/utils";
+import { formatMAD, formatDate, cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { createExpenseAction, deleteExpenseAction } from "@/lib/admin-actions";
-import type { ExpenseRow, FinanceSummary } from "@/lib/data";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { createExpenseAction, deleteExpenseAction, setConfirmateurMonthlyAction } from "@/lib/admin-actions";
+import type { ExpenseRow, FinancePnL } from "@/lib/data";
 import { KpiCard } from "@/components/admin/kpi-card";
+import { DataTable, type Column } from "@/components/admin/data-table";
 
 const CATEGORIES = ["stock", "ads", "rent", "salary", "delivery", "other"];
 
-export function ChargesManager({
-  summary,
-  expenses,
+/** One row of the Profit & Loss statement. Negative values render as "− X". */
+function MoneyRow({
+  label,
+  value,
+  variant,
 }: {
-  summary: FinanceSummary;
-  expenses: ExpenseRow[];
+  label: string;
+  value: number;
+  variant?: "indent" | "subtotal" | "total";
 }) {
+  const isTotal = variant === "total";
+  const isSub = variant === "subtotal";
+  return (
+    <TableRow className={cn(isTotal && "border-t-2 border-border", (isSub || isTotal) && "bg-muted/50")}>
+      <TableCell
+        className={cn(
+          variant === "indent" ? "ps-6 text-ink-soft" : "font-semibold text-ink",
+          (isSub || isTotal) && "font-bold text-ink",
+        )}
+      >
+        {label}
+      </TableCell>
+      <TableCell
+        className={cn(
+          "text-end tabular-nums",
+          isTotal
+            ? value < 0
+              ? "font-bold text-rose-600"
+              : "font-bold text-emerald-600"
+            : value < 0
+              ? "font-semibold text-rose-600"
+              : "font-semibold text-ink",
+        )}
+      >
+        {value < 0 ? `− ${formatMAD(Math.abs(value))}` : formatMAD(value)}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function SectionRow({ label }: { label: string }) {
+  return (
+    <TableRow className="hover:bg-transparent">
+      <TableCell colSpan={2} className="pt-4 text-xs font-bold uppercase tracking-wide text-ink-soft">
+        {label}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+export function ChargesManager({ pnl, expenses }: { pnl: FinancePnL; expenses: ExpenseRow[] }) {
   const { t } = useI18n();
   const router = useRouter();
+
+  const [period, setPeriod] = useState<"month" | "year">("month");
+  const p = period === "year" ? pnl.year : pnl.month;
+  const periodLabel = period === "year" ? t("admin.charges.periodYear") : t("admin.charges.periodMonth");
+
   const [form, setForm] = useState({ label: "", amount: "", category: "stock", date: "", note: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [delId, setDelId] = useState<string | null>(null);
+
+  const [conf, setConf] = useState(String(pnl.confirmateurMonthly));
+  const [confBusy, setConfBusy] = useState(false);
 
   const catLabel = (c: string) => t(`admin.charges.cat.${c}`);
 
@@ -61,18 +119,93 @@ export function ChargesManager({
     setDelId(null);
   }
 
+  const confNum = conf.trim() === "" ? NaN : Number(conf);
+  const confChanged = Number.isFinite(confNum) && confNum >= 0 && confNum !== pnl.confirmateurMonthly;
+
+  async function saveConf() {
+    if (!confChanged) return;
+    setConfBusy(true);
+    const res = await setConfirmateurMonthlyAction(confNum);
+    setConfBusy(false);
+    if (res.ok) router.refresh();
+  }
+
   const kpis = [
-    { icon: Banknote, tone: "bg-emerald-50 text-emerald-600", label: t("admin.charges.kpiRevenue"), value: formatMAD(summary.revenueMonth) },
-    { icon: Wallet, tone: "bg-rose-50 text-rose-600", label: t("admin.charges.kpiExpenses"), value: formatMAD(summary.expensesMonth) },
-    { icon: TrendingUp, tone: "bg-brand-50 text-brand-600", label: t("admin.charges.kpiProfit"), value: formatMAD(summary.profitMonth), neg: summary.profitMonth < 0 },
-    { icon: CalendarRange, tone: "bg-indigo-50 text-indigo-600", label: t("admin.charges.kpiProfitYear"), value: formatMAD(summary.profitYear), neg: summary.profitYear < 0 },
+    { icon: Banknote, tone: "bg-emerald-50 text-emerald-600", label: t("admin.charges.revenueRealized"), value: formatMAD(p.revenue) },
+    { icon: TrendingUp, tone: "bg-brand-50 text-brand-600", label: t("admin.charges.grossProfit"), value: formatMAD(p.grossProfit), neg: p.grossProfit < 0 },
+    { icon: Wallet, tone: p.netProfit < 0 ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600", label: t("admin.charges.netProfit"), value: formatMAD(p.netProfit), neg: p.netProfit < 0 },
+    { icon: Hourglass, tone: "bg-amber-50 text-amber-600", label: t("admin.charges.pipeline"), value: formatMAD(pnl.pipeline) },
   ];
 
-  const maxCat = Math.max(...summary.byCategory.map((c) => c.amount), 1);
+  const columns: Column<ExpenseRow>[] = [
+    {
+      key: "label",
+      header: t("admin.charges.thLabel"),
+      sort: (e) => e.label,
+      className: "font-semibold text-ink",
+      cell: (e) => <span dir="auto">{e.label}</span>,
+    },
+    {
+      key: "category",
+      header: t("admin.charges.thCategory"),
+      sort: (e) => e.category,
+      cell: (e) => <Badge className="bg-muted text-ink-soft">{catLabel(e.category)}</Badge>,
+    },
+    {
+      key: "amount",
+      header: t("admin.charges.thAmount"),
+      sort: (e) => e.amount,
+      className: "font-semibold text-ink",
+      cell: (e) => formatMAD(e.amount),
+    },
+    {
+      key: "date",
+      header: t("admin.charges.thDate"),
+      sort: (e) => new Date(e.date).getTime(),
+      className: "text-ink-soft",
+      cell: (e) => formatDate(e.date),
+    },
+    {
+      key: "actions",
+      header: "",
+      headClassName: "text-end",
+      className: "text-end",
+      cell: (e) => (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => remove(e.id)}
+          disabled={delId === e.id}
+          className="text-ink-soft hover:bg-rose-50 hover:text-rose-600"
+        >
+          {delId === e.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          <span className="sr-only">{t("admin.charges.delete")}</span>
+        </Button>
+      ),
+    },
+  ];
+
+  const maxCat = Math.max(...pnl.byCategoryMonth.map((c) => c.amount), 1);
   const inputCls = "h-10";
 
   return (
     <div className="space-y-6">
+      {/* Period toggle */}
+      <div className="flex flex-wrap gap-1.5">
+        {(["month", "year"] as const).map((k) => (
+          <Button
+            key={k}
+            type="button"
+            size="sm"
+            variant={period === k ? "primary" : "outline"}
+            onClick={() => setPeriod(k)}
+            className="font-semibold"
+          >
+            {k === "year" ? t("admin.charges.periodYear") : t("admin.charges.periodMonth")}
+          </Button>
+        ))}
+      </div>
+
       {/* KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {kpis.map((k) => (
@@ -87,120 +220,154 @@ export function ChargesManager({
         ))}
       </div>
 
+      {/* P&L statement + commission/confirmateur */}
+      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <Card className="p-5">
+          <h2 className="mb-3 font-display font-bold text-ink">
+            {t("admin.charges.pnlTitle")} · {periodLabel}
+          </h2>
+          <Table>
+            <TableBody>
+              <MoneyRow label={t("admin.charges.revenueRealized")} value={p.revenue} />
+              <SectionRow label={t("admin.charges.cogs")} />
+              <MoneyRow label={t("admin.charges.filterCost")} value={-p.cogs} variant="indent" />
+              <MoneyRow label={t("admin.charges.techCommission")} value={-p.techCommission} variant="indent" />
+              <MoneyRow label={t("admin.charges.grossProfit")} value={p.grossProfit} variant="subtotal" />
+              <SectionRow label={t("admin.charges.opexLine")} />
+              <MoneyRow label={t("admin.charges.confirmateur")} value={-p.confirmateur} variant="indent" />
+              <MoneyRow label={t("admin.charges.opexOther")} value={-p.opex} variant="indent" />
+              <MoneyRow label={t("admin.charges.netProfit")} value={p.netProfit} variant="total" />
+            </TableBody>
+          </Table>
+        </Card>
+
+        <div className="space-y-6">
+          {/* Technician commissions (this month) */}
+          <Card className="p-5">
+            <h2 className="mb-3 flex items-center gap-2 font-display font-bold text-ink">
+              <Users className="h-4 w-4 text-ink-soft" />
+              {t("admin.charges.commissionTitle")} · {t("admin.charges.periodMonth")}
+            </h2>
+            {pnl.commissionsMonth.length === 0 ? (
+              <p className="py-4 text-center text-sm text-ink-soft">{t("admin.charges.noCommission")}</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="text-xs uppercase tracking-wide text-ink-soft">
+                    <TableHead>{t("admin.charges.thTech")}</TableHead>
+                    <TableHead className="text-center">{t("admin.charges.thInstalls")}</TableHead>
+                    <TableHead className="text-end">{t("admin.charges.thCommission")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pnl.commissionsMonth.map((c) => (
+                    <TableRow key={c.name}>
+                      <TableCell className="font-semibold text-ink" dir="auto">{c.name}</TableCell>
+                      <TableCell className="text-center font-semibold tabular-nums text-ink-soft">{c.installs}</TableCell>
+                      <TableCell className="text-end font-semibold tabular-nums text-ink">{formatMAD(c.total)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </Card>
+
+          {/* Confirmateur monthly pay */}
+          <Card className="p-5">
+            <Label className="mb-1 block text-sm font-semibold text-ink">{t("admin.charges.confirmateurPay")}</Label>
+            <div className="flex items-center gap-2">
+              <Input type="number" min="0" value={conf} onChange={(e) => setConf(e.target.value)} className="h-10 w-32" />
+              <span className="text-sm font-semibold text-ink-soft">MAD</span>
+              <Button
+                onClick={saveConf}
+                disabled={confBusy || !confChanged}
+                className="ms-auto font-semibold"
+              >
+                {confBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : t("admin.charges.save")}
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-ink-soft">{t("admin.charges.confirmateurHint")}</p>
+          </Card>
+        </div>
+      </div>
+
+      {/* Expense management */}
       <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
-        {/* Add + recent expenses */}
         <div className="space-y-6">
           <Card className="p-5">
             <h2 className="mb-3 font-display font-bold text-ink">{t("admin.charges.addTitle")}</h2>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-xs font-medium text-ink-soft">{t("admin.charges.label")}</label>
+                <Label className="mb-1 text-xs font-semibold text-ink-soft">{t("admin.charges.label")}</Label>
                 <Input className={inputCls} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder={t("admin.charges.labelPlaceholder")} />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-ink-soft">{t("admin.charges.amount")}</label>
+                <Label className="mb-1 text-xs font-semibold text-ink-soft">{t("admin.charges.amount")}</Label>
                 <Input className={inputCls} type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="0" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-ink-soft">{t("admin.charges.category")}</label>
-                <select
-                  value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
-                >
-                  {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>{catLabel(c)}</option>
-                  ))}
-                </select>
+                <Label className="mb-1 text-xs font-semibold text-ink-soft">{t("admin.charges.category")}</Label>
+                <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: String(v) })}>
+                  <SelectTrigger className="h-10 w-full">
+                    <SelectValue>{(value) => catLabel(String(value))}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>{catLabel(c)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-ink-soft">{t("admin.charges.date")}</label>
+                <Label className="mb-1 text-xs font-semibold text-ink-soft">{t("admin.charges.date")}</Label>
                 <Input className={inputCls} type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-ink-soft">{t("admin.charges.note")}</label>
+                <Label className="mb-1 text-xs font-semibold text-ink-soft">{t("admin.charges.note")}</Label>
                 <Input className={inputCls} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
               </div>
             </div>
             {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
-            <button
-              onClick={add}
-              disabled={busy}
-              className="mt-3 inline-flex items-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:opacity-60"
-            >
+            <Button onClick={add} disabled={busy} className="mt-3 font-semibold">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               {busy ? t("admin.charges.adding") : t("admin.charges.add")}
-            </button>
+            </Button>
           </Card>
 
-          <Card className="overflow-hidden p-0">
-            <div className="border-b border-slate-200 px-5 py-4">
-              <h2 className="font-display font-bold text-ink">{t("admin.charges.recent")}</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("admin.charges.thLabel")}</TableHead>
-                    <TableHead>{t("admin.charges.thCategory")}</TableHead>
-                    <TableHead>{t("admin.charges.thAmount")}</TableHead>
-                    <TableHead>{t("admin.charges.thDate")}</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {expenses.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="py-12 text-center text-ink-soft">
-                        {t("admin.charges.empty")}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    expenses.map((e) => (
-                      <TableRow key={e.id}>
-                        <TableCell className="font-medium text-ink" dir="auto">{e.label}</TableCell>
-                        <TableCell>
-                          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-ink-soft">{catLabel(e.category)}</span>
-                        </TableCell>
-                        <TableCell className="font-semibold text-ink">{formatMAD(e.amount)}</TableCell>
-                        <TableCell className="text-ink-soft">{formatDate(e.date)}</TableCell>
-                        <TableCell className="text-end">
-                          <button
-                            onClick={() => remove(e.id)}
-                            disabled={delId === e.id}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
-                          >
-                            {delId === e.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                          </button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </Card>
+          <div className="space-y-3">
+            <h2 className="font-display font-bold text-ink">{t("admin.charges.recent")}</h2>
+            <DataTable
+              rows={expenses}
+              columns={columns}
+              getRowId={(e) => e.id}
+              search={(e) => `${e.label} ${catLabel(e.category)}`}
+              defaultSortKey="date"
+              defaultSortDir="desc"
+              emptyText={t("admin.charges.empty")}
+            />
+          </div>
         </div>
 
         {/* By category */}
         <Card className="h-fit p-5">
           <h2 className="mb-4 font-display font-bold text-ink">{t("admin.charges.byCategory")}</h2>
-          {summary.byCategory.length === 0 ? (
+          {pnl.byCategoryMonth.length === 0 ? (
             <p className="py-8 text-center text-sm text-ink-soft">{t("admin.charges.empty")}</p>
           ) : (
-            <ul className="space-y-3">
-              {summary.byCategory.map((c) => (
-                <li key={c.category}>
+            <div className="space-y-3">
+              {pnl.byCategoryMonth.map((c) => (
+                <div key={c.category}>
                   <div className="mb-1 flex items-center justify-between text-sm">
-                    <span className="text-ink">{catLabel(c.category)}</span>
+                    <span className="font-semibold text-ink">{catLabel(c.category)}</span>
                     <span className="font-semibold text-ink">{formatMAD(c.amount)}</span>
                   </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-aqua-400" style={{ width: `${Math.max(6, Math.round((c.amount / maxCat) * 100))}%` }} />
-                  </div>
-                </li>
+                  <Progress
+                    value={Math.max(6, Math.round((c.amount / maxCat) * 100))}
+                    className="h-2 [&_[data-slot=progress-track]]:h-2 [&_[data-slot=progress-track]]:bg-muted [&_[data-slot=progress-indicator]]:bg-gradient-to-r [&_[data-slot=progress-indicator]]:from-brand-500 [&_[data-slot=progress-indicator]]:to-aqua-400"
+                  />
+                </div>
               ))}
-            </ul>
+            </div>
           )}
         </Card>
       </div>

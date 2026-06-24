@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Check, HardHat } from "lucide-react";
+import { Loader2, Check } from "lucide-react";
 import { useI18n } from "@/i18n/i18n-context";
 import { formatMAD } from "@/lib/utils";
-import { Card } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { DataTable, type Column } from "@/components/admin/data-table";
 import { setTechnicianCommissionAction } from "@/lib/admin-actions";
 
 export type TechRow = {
@@ -21,7 +21,7 @@ export type TechRow = {
   commission: number;
 };
 
-function Row({ r }: { r: TechRow }) {
+function RateCell({ r }: { r: TechRow }) {
   const { t } = useI18n();
   const router = useRouter();
   const [val, setVal] = useState(String(r.rate));
@@ -42,65 +42,96 @@ function Row({ r }: { r: TechRow }) {
   }
 
   return (
-    <TableRow>
-      <TableCell className="font-medium text-ink" dir="auto">{r.name}</TableCell>
-      <TableCell className="text-ink-soft" dir="auto">{r.city || "—"}</TableCell>
-      <TableCell className="text-ink">{r.installs}</TableCell>
-      <TableCell className="text-ink">{r.sav}</TableCell>
-      <TableCell className="font-semibold text-ink">{formatMAD(r.revenue)}</TableCell>
-      <TableCell>
-        <div className="flex items-center gap-1.5">
-          <Input type="number" value={val} onChange={(e) => setVal(e.target.value)} className="h-8 w-24" />
-          <button
-            onClick={save}
-            disabled={busy || Number(val) === r.rate}
-            className="inline-flex h-8 items-center gap-1 rounded-lg bg-brand-600 px-2.5 text-xs font-semibold text-white transition hover:bg-brand-700 disabled:opacity-40"
-          >
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : done ? <Check className="h-3.5 w-3.5" /> : t("admin.techPage.save")}
-          </button>
-        </div>
-      </TableCell>
-      <TableCell className="font-semibold text-ink">{formatMAD(r.commission)}</TableCell>
-    </TableRow>
+    <div className="flex items-center gap-1.5">
+      <Input type="number" value={val} onChange={(e) => setVal(e.target.value)} className="h-8 w-24" />
+      <Button
+        variant="primary"
+        size="sm"
+        onClick={save}
+        disabled={busy || Number(val) === r.rate}
+        className="h-8 gap-1 px-2.5 text-xs font-semibold"
+      >
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : done ? <Check className="h-3.5 w-3.5" /> : t("admin.techPage.save")}
+      </Button>
+    </div>
   );
 }
 
 export function TechniciansManager({ rows }: { rows: TechRow[] }) {
   const { t } = useI18n();
 
-  if (rows.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white py-20 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-500">
-          <HardHat className="h-7 w-7" />
-        </div>
-        <p className="mt-4 text-ink-soft">{t("admin.techPage.empty")}</p>
-      </div>
-    );
-  }
+  const columns: Column<TechRow>[] = [
+    {
+      key: "name",
+      header: t("admin.techPage.thName"),
+      sort: (r) => r.name,
+      cell: (r) => (
+        <span className="font-semibold text-ink" dir="auto">{r.name}</span>
+      ),
+    },
+    {
+      key: "city",
+      header: t("admin.techPage.thCity"),
+      sort: (r) => r.city || "",
+      cell: (r) => (
+        <span className="text-ink-soft" dir="auto">{r.city || "—"}</span>
+      ),
+    },
+    {
+      key: "installs",
+      header: t("admin.techPage.thInstalls"),
+      sort: (r) => r.installs,
+      cell: (r) => <span className="text-ink">{r.installs}</span>,
+    },
+    {
+      key: "sav",
+      header: t("admin.techPage.thSav"),
+      sort: (r) => r.sav,
+      cell: (r) => <span className="text-ink">{r.sav}</span>,
+    },
+    {
+      key: "revenue",
+      header: t("admin.techPage.thRevenue"),
+      sort: (r) => r.revenue,
+      cell: (r) => <span className="font-semibold text-ink">{formatMAD(r.revenue)}</span>,
+    },
+    {
+      key: "rate",
+      header: t("admin.techPage.thRate"),
+      sort: (r) => r.rate,
+      cell: (r) => <RateCell r={r} />,
+    },
+    {
+      key: "commission",
+      header: t("admin.techPage.thCommission"),
+      sort: (r) => r.commission,
+      cell: (r) => <span className="font-semibold text-ink">{formatMAD(r.commission)}</span>,
+    },
+  ];
 
   return (
-    <Card className="overflow-hidden p-0">
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("admin.techPage.thName")}</TableHead>
-              <TableHead>{t("admin.techPage.thCity")}</TableHead>
-              <TableHead>{t("admin.techPage.thInstalls")}</TableHead>
-              <TableHead>{t("admin.techPage.thSav")}</TableHead>
-              <TableHead>{t("admin.techPage.thRevenue")}</TableHead>
-              <TableHead>{t("admin.techPage.thRate")}</TableHead>
-              <TableHead>{t("admin.techPage.thCommission")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => (
-              <Row key={r.id} r={r} />
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </Card>
+    <DataTable
+      rows={rows}
+      columns={columns}
+      getRowId={(r) => r.id}
+      search={(r) => `${r.name} ${r.city ?? ""}`}
+      searchPlaceholder={t("admin.techPage.thName")}
+      csv={{
+        filename: "technicians.csv",
+        row: (r) => ({
+          Name: r.name,
+          City: r.city ?? "",
+          Installs: r.installs,
+          SAV: r.sav,
+          Revenue: r.revenue,
+          Rate: r.rate,
+          Commission: r.commission,
+        }),
+      }}
+      defaultSortKey="installs"
+      defaultSortDir="desc"
+      emptyText={t("admin.techPage.empty")}
+      minWidth="min-w-[820px]"
+    />
   );
 }

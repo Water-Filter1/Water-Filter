@@ -35,8 +35,8 @@
   --color-background: #ffffff;
   --color-foreground: #0a0f16;
 
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-poppins), var(--font-inter), sans-serif;
+  --font-sans: var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
 
   --radius-card: 1.25rem;
 
@@ -188,14 +188,15 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Admin sidebar — dark navy (the shadcn Sidebar is only used in /admin) */
+  --sidebar: #0a1727;
+  --sidebar-foreground: #cbd5e1;
+  --sidebar-primary: #1f8fd6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(255, 255, 255, 0.06);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-ring: #1f8fd6;
 }
 
 .dark {

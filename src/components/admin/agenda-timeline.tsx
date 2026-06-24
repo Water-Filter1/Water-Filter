@@ -25,8 +25,8 @@ export async function AgendaTimeline({ items }: { items: UpcomingJob[] }) {
   const { t } = await getT();
 
   return (
-    <Card className="gap-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-sm ring-0">
-      <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 px-5 py-4">
+    <Card className="gap-0 overflow-hidden rounded-2xl border border-border bg-card p-0 shadow-sm ring-0">
+      <CardHeader className="flex flex-row items-center justify-between border-b border-border px-5 py-4">
         <div className="flex items-center gap-2">
           <Badge className="h-8 w-8 justify-center rounded-lg bg-brand-50 p-0 text-brand-600">
             <CalendarClock className="h-4 w-4" />
@@ -50,11 +50,11 @@ export async function AgendaTimeline({ items }: { items: UpcomingJob[] }) {
               const m = META[j.type];
               const sub = [j.product, j.city].filter(Boolean).join(" · ");
               return (
-                <TableRow key={j.id} className="border-0 hover:bg-slate-50">
+                <TableRow key={j.id} className="border-0 hover:bg-muted/50">
                   {/* Timeline rail: a continuous line with a colored dot per job (decorative) */}
                   <TableCell className="relative w-10 py-3">
-                    <span className="absolute start-1/2 top-0 h-full w-px -translate-x-1/2 bg-slate-200" aria-hidden />
-                    <span className={cn("relative z-10 mx-auto block h-3 w-3 rounded-full ring-4 ring-white", m.dot)} aria-hidden />
+                    <span className="absolute start-1/2 top-0 h-full w-px -translate-x-1/2 bg-border" aria-hidden />
+                    <span className={cn("relative z-10 mx-auto block h-3 w-3 rounded-full ring-4 ring-card", m.dot)} aria-hidden />
                   </TableCell>
 
                   {/* Date + type, then customer · product · city */}
@@ -94,7 +94,7 @@ export async function AgendaTimeline({ items }: { items: UpcomingJob[] }) {
                         </Avatar>
                       </span>
                     ) : (
-                      <Badge className="bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">
+                      <Badge className="bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
                         {t("agenda.unassigned")}
                       </Badge>
                     )}

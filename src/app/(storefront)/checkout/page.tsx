@@ -9,6 +9,7 @@ import {
   MapPin,
   Home,
   StickyNote,
+  Megaphone,
   Banknote,
   ShieldCheck,
   Truck,
@@ -36,8 +37,10 @@ export default function CheckoutPage() {
     city: "",
     address: "",
     note: "",
+    source: "", // how they found us (acquisition channel) — optional
     hp: "", // honeypot — stays empty for humans
   });
+  const [optIn, setOptIn] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -80,6 +83,8 @@ export default function CheckoutPage() {
         address: form.address,
         note: form.note || undefined,
         items: orderItems,
+        acquisitionSource: form.source || undefined,
+        whatsappOptIn: optIn,
         hp: form.hp,
       });
 
@@ -268,6 +273,38 @@ export default function CheckoutPage() {
                 />
               </div>
             </div>
+
+            {/* How did you hear about us? (acquisition channel) */}
+            <div>
+              <label className="mb-1.5 block text-sm font-semibold text-ink">{t("checkout.sourceLabel")}</label>
+              <div className="relative">
+                <Megaphone className="absolute start-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft" />
+                <select
+                  value={form.source}
+                  onChange={(e) => set("source", e.target.value)}
+                  className={`${inputBase} appearance-none border-line focus:border-brand-300`}
+                >
+                  <option value="">{t("checkout.sourcePlaceholder")}</option>
+                  <option value="facebook">Facebook</option>
+                  <option value="tiktok">TikTok</option>
+                  <option value="instagram">Instagram</option>
+                  <option value="google">Google</option>
+                  <option value="referral">{t("admin.crm.channelReferral")}</option>
+                  <option value="other">{t("admin.crm.channelOther")}</option>
+                </select>
+              </div>
+            </div>
+
+            {/* WhatsApp maintenance-reminder consent */}
+            <label className="flex cursor-pointer items-start gap-2.5 text-sm text-ink-soft">
+              <input
+                type="checkbox"
+                checked={optIn}
+                onChange={(e) => setOptIn(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-line text-brand-600 focus:ring-brand-300"
+              />
+              <span>{t("checkout.consentLabel")}</span>
+            </label>
           </div>
 
           {/* Payment method */}
@@ -308,7 +345,7 @@ export default function CheckoutPage() {
                         alt={item.name}
                         hue={item.hue}
                         sizes="56px"
-                        className="p-1"
+                        className="object-cover"
                       />
                     </div>
                     <span className="absolute -end-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-700 px-1 text-xs font-bold text-white">

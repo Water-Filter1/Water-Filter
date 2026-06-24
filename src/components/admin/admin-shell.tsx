@@ -10,17 +10,15 @@ import {
   Users,
   Settings,
   ExternalLink,
-  Menu,
   Bell,
   LogOut,
   MessageSquare,
   UserCog,
   Wrench,
-  Star,
+  Inbox,
   Droplet,
   Boxes,
   Wallet,
-  HardHat,
   Receipt,
 } from "lucide-react";
 import { cn, formatMAD } from "@/lib/utils";
@@ -32,8 +30,22 @@ import { LanguageSwitcher } from "@/components/language-switcher";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Sheet, SheetTrigger, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import {
+  Sidebar,
+  SidebarProvider,
+  SidebarInset,
+  SidebarTrigger,
+  SidebarHeader,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarMenuBadge,
+  useSidebar,
+} from "@/components/ui/sidebar";
 import type { AdminNotifications } from "@/lib/data";
 
 const NAV = [
@@ -41,12 +53,10 @@ const NAV = [
   { labelKey: "admin.nav.products", href: "/admin/products", icon: Package },
   { labelKey: "admin.nav.orders", href: "/admin/orders", icon: ShoppingBag },
   { labelKey: "admin.nav.factures", href: "/admin/factures", icon: Receipt },
-  { labelKey: "admin.nav.messages", href: "/admin/messages", icon: MessageSquare },
-  { labelKey: "admin.nav.reviews", href: "/admin/reviews", icon: Star },
+  { labelKey: "admin.nav.inbox", href: "/admin/inbox", icon: Inbox },
   { labelKey: "admin.nav.clients", href: "/admin/clients", icon: Users },
-  { labelKey: "admin.nav.maintenance", href: "/admin/maintenance", icon: Wrench },
+  { labelKey: "admin.nav.service", href: "/admin/service", icon: Wrench },
   { labelKey: "admin.nav.stock", href: "/admin/stock", icon: Boxes },
-  { labelKey: "admin.nav.techniciens", href: "/admin/techniciens", icon: HardHat },
   { labelKey: "admin.nav.charges", href: "/admin/charges", icon: Wallet },
   { labelKey: "admin.nav.users", href: "/admin/users", icon: UserCog },
   { labelKey: "admin.nav.settings", href: "/admin/settings", icon: Settings },
@@ -64,16 +74,121 @@ const EMPTY: AdminNotifications = {
   maintenance: [],
 };
 
+/** Per-nav-item count badge (color + value) driven by live notifications. */
+function navBadge(href: string, n: AdminNotifications): { count: number; cls: string } | null {
+  if (href === "/admin/orders" && n.pendingCount > 0) return { count: n.pendingCount, cls: "bg-amber-400 text-amber-950" };
+  if (href === "/admin/inbox") {
+    const c = n.unreadMessagesCount + n.pendingReviewsCount;
+    if (c > 0) return { count: c, cls: "bg-brand-300 text-brand-950" };
+  }
+  if (href === "/admin/service" && n.maintenanceDueCount > 0) return { count: n.maintenanceDueCount, cls: "bg-orange-400 text-orange-950" };
+  return null;
+}
+
+/** The shadcn Sidebar (desktop rail + built-in mobile drawer). Rendered inside SidebarProvider. */
+function AppSidebar({ notifs, user }: { notifs: AdminNotifications; user: { email: string; role: string } | null }) {
+  const { t, locale } = useI18n();
+  const pathname = usePathname();
+  const { isMobile, setOpenMobile } = useSidebar();
+  const side = dirFor(locale) === "rtl" ? "right" : "left";
+  const roleLabel =
+    user?.role === "plombier"
+      ? t("admin.usersManager.role.technicien")
+      : user?.role === "confirmateur"
+        ? t("admin.usersManager.role.confirmateur")
+        : t("admin.usersManager.role.admin");
+  const initial = (user?.email?.[0] ?? "A").toUpperCase();
+
+  const isActive = (href: string, exact?: boolean) => (exact ? pathname === href : pathname.startsWith(href));
+  const closeMobile = () => {
+    if (isMobile) setOpenMobile(false);
+  };
+
+  return (
+    <Sidebar side={side} dir={dirFor(locale)} collapsible="offcanvas" className="print:hidden">
+      <SidebarHeader className="p-0">
+        <Link href="/admin" onClick={closeMobile} className="flex items-center gap-3 px-5 py-5">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-aqua-500 text-white shadow-[0_8px_24px_-8px_rgba(34,211,238,0.6)]">
+            <Droplet className="h-5 w-5" fill="currentColor" />
+          </span>
+          <div className="leading-tight">
+            <p className="font-display text-lg font-extrabold tracking-tight text-white">
+              Filtre<span className="text-brand-300">Maroc</span>
+            </p>
+            <p className="text-[11px] font-medium uppercase tracking-wider text-slate-400">{t("admin.space")}</p>
+          </div>
+        </Link>
+      </SidebarHeader>
+
+      <SidebarContent className="px-2">
+        <SidebarGroup className="p-0">
+          <SidebarMenu className="gap-1">
+            {NAV.map((item) => {
+              const active = isActive(item.href, item.exact);
+              const b = navBadge(item.href, notifs);
+              return (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton
+                    isActive={active}
+                    className="h-10 gap-3 rounded-xl px-3 font-medium text-slate-300 hover:bg-white/5 hover:text-white data-active:bg-gradient-to-r data-active:from-brand-500 data-active:to-brand-600 data-active:font-medium data-active:text-white data-active:shadow-[0_10px_22px_-10px_rgba(31,143,214,0.85)]"
+                    render={<Link href={item.href} onClick={closeMobile} />}
+                  >
+                    <item.icon />
+                    <span>{t(item.labelKey)}</span>
+                  </SidebarMenuButton>
+                  {b && <SidebarMenuBadge className={cn("right-auto end-1 font-bold", b.cls)}>{b.count}</SidebarMenuBadge>}
+                </SidebarMenuItem>
+              );
+            })}
+          </SidebarMenu>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarFooter className="gap-1 border-t border-white/10">
+        <Link
+          href="/"
+          onClick={closeMobile}
+          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
+        >
+          <ExternalLink className="h-5 w-5" />
+          {t("dash.viewSite")}
+        </Link>
+        <form action={logoutAction}>
+          <Button
+            type="submit"
+            variant="ghost"
+            className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-rose-500/10 hover:text-rose-300"
+          >
+            <LogOut className="h-5 w-5" />
+            {t("dash.logout")}
+          </Button>
+        </form>
+        {/* account — visible, under Log out */}
+        <div className="mt-1 flex items-center gap-3 border-t border-white/10 px-3 pt-3">
+          <Avatar className="size-9 shrink-0">
+            <AvatarFallback className="bg-brand-600 text-sm font-bold text-white">{initial}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 leading-tight">
+            <p className="truncate text-sm font-semibold text-white">{roleLabel}</p>
+            <p className="truncate text-xs text-slate-400" dir="ltr">{user?.email}</p>
+          </div>
+        </div>
+      </SidebarFooter>
+    </Sidebar>
+  );
+}
+
 export function AdminShell({
   children,
   notifications,
+  user,
 }: {
   children: React.ReactNode;
   notifications?: AdminNotifications;
+  user?: { email: string; role: string } | null;
 }) {
   const pathname = usePathname();
-  const { t, locale } = useI18n();
-  const [open, setOpen] = useState(false);
+  const { t } = useI18n();
   const [bellOpen, setBellOpen] = useState(false);
   const [notifs, setNotifs] = useState<AdminNotifications>(notifications ?? EMPTY);
 
@@ -91,10 +206,6 @@ export function AdminShell({
     return () => clearInterval(id);
   }, []);
 
-  function isActive(href: string, exact?: boolean) {
-    return exact ? pathname === href : pathname.startsWith(href);
-  }
-
   // Login page renders without the admin shell
   if (pathname === "/admin/login") return <>{children}</>;
 
@@ -105,132 +216,13 @@ export function AdminShell({
     notifs.maintenanceDueCount +
     notifs.pendingReviewsCount;
 
-  const drawerSide = dirFor(locale) === "rtl" ? "right" : "left";
-
-  const SidebarContent = (
-    <div className="flex h-full flex-col">
-      <Link href="/admin" className="flex items-center gap-3 px-5 py-5">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-400 to-aqua-500 text-white shadow-[0_8px_24px_-8px_rgba(34,211,238,0.6)]">
-          <Droplet className="h-5 w-5" fill="currentColor" />
-        </span>
-        <div className="leading-tight">
-          <p className="font-display text-lg font-extrabold tracking-tight text-white">
-            Filtre<span className="text-brand-300">Maroc</span>
-          </p>
-          <p className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
-            {t("admin.space")}
-          </p>
-        </div>
-      </Link>
-
-      <nav className="mt-3 flex-1 space-y-1 px-3">
-        {NAV.map((item) => {
-          const active = isActive(item.href, item.exact);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setOpen(false)}
-              className={cn(
-                "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all",
-                active
-                  ? "bg-gradient-to-r from-brand-500 to-brand-600 text-white shadow-[0_10px_22px_-10px_rgba(31,143,214,0.85)]"
-                  : "text-slate-300 hover:bg-white/5 hover:text-white",
-              )}
-            >
-              <item.icon
-                className={cn(
-                  "h-5 w-5 transition-colors",
-                  active ? "text-white" : "text-slate-400 group-hover:text-white",
-                )}
-              />
-              {t(item.labelKey)}
-              {item.href === "/admin/orders" && notifs.pendingCount > 0 && (
-                <Badge className="ms-auto h-5 min-w-5 justify-center bg-amber-400 px-1 text-xs font-bold text-amber-950">
-                  {notifs.pendingCount}
-                </Badge>
-              )}
-              {item.href === "/admin/messages" && notifs.unreadMessagesCount > 0 && (
-                <Badge className="ms-auto h-5 min-w-5 justify-center bg-brand-300 px-1 text-xs font-bold text-brand-950">
-                  {notifs.unreadMessagesCount}
-                </Badge>
-              )}
-              {item.href === "/admin/maintenance" && notifs.maintenanceDueCount > 0 && (
-                <Badge className="ms-auto h-5 min-w-5 justify-center bg-orange-400 px-1 text-xs font-bold text-orange-950">
-                  {notifs.maintenanceDueCount}
-                </Badge>
-              )}
-              {item.href === "/admin/reviews" && notifs.pendingReviewsCount > 0 && (
-                <Badge className="ms-auto h-5 min-w-5 justify-center bg-amber-400 px-1 text-xs font-bold text-amber-950">
-                  {notifs.pendingReviewsCount}
-                </Badge>
-              )}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <div className="border-t border-white/10 p-3">
-        <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-white/5 px-3 py-2.5">
-          <Avatar className="size-9">
-            <AvatarFallback className="bg-gradient-to-br from-brand-400 to-aqua-500 text-sm font-bold text-white">
-              A
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 leading-tight">
-            <p className="truncate text-sm font-semibold text-white">{t("admin.roleLabel")}</p>
-            <p className="truncate text-xs text-slate-400">Filtre Maroc</p>
-          </div>
-        </div>
-        <Link
-          href="/"
-          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
-        >
-          <ExternalLink className="h-5 w-5" />
-          {t("dash.viewSite")}
-        </Link>
-        <form action={logoutAction}>
-          <Button
-            type="submit"
-            variant="ghost"
-            className="h-auto w-full justify-start gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-rose-500/10 hover:text-rose-300"
-          >
-            <LogOut className="h-5 w-5" />
-            {t("dash.logout")}
-          </Button>
-        </form>
-      </div>
-    </div>
-  );
-
   return (
-    <div className="min-h-screen bg-neutral-50 print:bg-white">
-      {/* Desktop sidebar */}
-      <aside className="fixed inset-y-0 start-0 hidden w-64 border-e border-white/10 bg-gradient-to-b from-[#0c1c2f] via-[#0a1727] to-[#081320] lg:block print:!hidden">
-        {SidebarContent}
-      </aside>
-
-      {/* Content */}
-      <div className="lg:ps-64 print:ps-0">
+    <SidebarProvider>
+      <AppSidebar notifs={notifs} user={user ?? null} />
+      <SidebarInset className="bg-neutral-50 print:bg-white">
         {/* Topbar */}
         <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-line bg-white/80 px-4 backdrop-blur lg:px-8 print:hidden">
-          {/* Mobile drawer */}
-          <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger
-              aria-label={t("dash.menu")}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-ink transition-colors hover:bg-neutral-100 lg:hidden"
-            >
-              <Menu className="h-5 w-5" />
-            </SheetTrigger>
-            <SheetContent
-              side={drawerSide}
-              showCloseButton={false}
-              className="w-64 border-white/10 bg-gradient-to-b from-[#0c1c2f] via-[#0a1727] to-[#081320] p-0 data-[side=left]:w-64 data-[side=left]:sm:max-w-none data-[side=right]:w-64 data-[side=right]:sm:max-w-none"
-            >
-              <SheetTitle className="sr-only">{t("admin.space")}</SheetTitle>
-              {SidebarContent}
-            </SheetContent>
-          </Sheet>
+          <SidebarTrigger className="text-ink hover:bg-neutral-100" />
 
           <div className="ms-auto flex items-center gap-3">
             <LanguageSwitcher />
@@ -320,7 +312,7 @@ export function AdminShell({
                       {notifs.messages.map((m) => (
                         <Link
                           key={m.id}
-                          href="/admin/messages"
+                          href="/admin/inbox"
                           onClick={() => setBellOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-50"
                         >
@@ -344,7 +336,7 @@ export function AdminShell({
                       {notifs.maintenance.map((m) => (
                         <Link
                           key={m.id}
-                          href="/admin/maintenance"
+                          href="/admin/service"
                           onClick={() => setBellOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 hover:bg-neutral-50"
                         >
@@ -372,20 +364,11 @@ export function AdminShell({
               </PopoverContent>
             </Popover>
 
-            <div className="flex items-center gap-2.5">
-              <Avatar className="size-9">
-                <AvatarFallback className="bg-brand-600 text-sm font-bold text-white">A</AvatarFallback>
-              </Avatar>
-              <div className="hidden text-sm leading-tight sm:block">
-                <p className="font-semibold text-ink">{t("admin.roleLabel")}</p>
-                <p className="text-xs text-ink-soft">Filtre Maroc</p>
-              </div>
-            </div>
           </div>
         </header>
 
-        <main className="p-4 lg:p-8 print:p-0">{children}</main>
-      </div>
-    </div>
+        <div className="p-4 lg:p-8 print:p-0">{children}</div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

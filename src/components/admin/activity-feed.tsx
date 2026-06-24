@@ -58,16 +58,16 @@ export async function ActivityFeed({ items, dark = false }: { items: ActivityEnt
     <Card
       className={cn(
         "gap-0 overflow-hidden rounded-2xl border p-0 shadow-sm ring-0",
-        dark ? "border-white/10 bg-white/[0.04]" : "border-slate-200 bg-white",
+        dark ? "border-white/10 bg-white/[0.04]" : "border-border bg-card",
       )}
     >
-      <CardHeader className={cn("flex flex-row items-center border-b px-5 py-4", dark ? "border-white/10" : "border-slate-200")}>
+      <CardHeader className={cn("flex flex-row items-center border-b px-5 py-4", dark ? "border-white/10" : "border-border")}>
         <CardTitle className={cn("font-display font-bold", dark ? "text-white" : "text-ink")}>
           {t("admin.dash.activityTitle")}
         </CardTitle>
       </CardHeader>
       {items.length === 0 ? (
-        <p className={cn("px-5 py-12 text-center text-sm", dark ? "text-slate-400" : "text-ink-soft")}>
+        <p className={cn("px-5 py-12 text-center text-sm", dark ? "text-slate-400" : "text-muted-foreground")}>
           {t("admin.dash.activityEmpty")}
         </p>
       ) : (
@@ -79,7 +79,7 @@ export async function ActivityFeed({ items, dark = false }: { items: ActivityEnt
                 return (
                   <TableRow
                     key={e.id}
-                    className={cn("border-0", dark ? "hover:bg-white/5" : "hover:bg-slate-50")}
+                    className={cn("border-0", dark ? "hover:bg-white/5" : "hover:bg-muted/50")}
                   >
                     <TableCell className="py-3">
                       <span className="flex items-center gap-3">
@@ -97,7 +97,7 @@ export async function ActivityFeed({ items, dark = false }: { items: ActivityEnt
                       </span>
                     </TableCell>
                     <TableCell
-                      className={cn("py-3 text-end text-xs whitespace-nowrap", dark ? "text-slate-400" : "text-ink-soft")}
+                      className={cn("py-3 text-end text-xs whitespace-nowrap", dark ? "text-slate-400" : "text-muted-foreground")}
                     >
                       {formatDate(e.createdAt)}
                     </TableCell>

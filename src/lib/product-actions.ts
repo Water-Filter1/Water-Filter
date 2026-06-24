@@ -58,6 +58,7 @@ export async function saveProductAction(
   const name = String(formData.get("name") ?? "").trim();
   const categorySlug = String(formData.get("category") ?? "cuisine");
   const price = num(formData.get("price")) ?? 0;
+  const cost = num(formData.get("cost")) ?? 0;
   const oldPrice = num(formData.get("oldPrice"));
   const stages = num(formData.get("stages"));
   const capacity = String(formData.get("capacity") ?? "").trim() || null;
@@ -80,21 +81,46 @@ export async function saveProductAction(
     throw new Error("Le prix doit être un nombre supérieur à 0.");
   if (stock < 0) throw new Error("Le stock ne peut pas être négatif.");
 
-  // images: keep existing (edit) + upload new files
-  let images: string[] = [];
-  const existing = String(formData.get("existingImages") ?? "");
-  if (existing) {
-    try {
-      images = JSON.parse(existing) as string[];
-    } catch {
-      /* ignore */
-    }
-  }
+  // Upload the new files (in submission order), then assemble the final image list in the
+  // admin's chosen order. `imageOrder` is a JSON array where each entry is either an existing
+  // URL (string) or null (= consume the next newly-uploaded file). Falls back to the legacy
+  // "existing JSON + appended uploads" contract if imageOrder isn't present.
   const files = formData
     .getAll("images")
     .filter((f): f is File => f instanceof File && f.size > 0);
-  for (const f of files) {
-    images.push(await uploadProductImage(f));
+  const uploaded: string[] = [];
+  for (const f of files) uploaded.push(await uploadProductImage(f));
+
+  let images: string[] = [];
+  const orderRaw = String(formData.get("imageOrder") ?? "");
+  if (orderRaw) {
+    let order: (string | null)[] = [];
+    try {
+      order = JSON.parse(orderRaw) as (string | null)[];
+    } catch {
+      order = [];
+    }
+    // The client emits one null per new image; the server must have uploaded exactly that
+    // many. If they disagree (e.g. a file was dropped), fail loud instead of silently
+    // dropping/misordering images.
+    const nullCount = order.filter((e) => e === null).length;
+    if (nullCount !== uploaded.length) {
+      throw new Error("Échec de l'envoi des images. Réessayez.");
+    }
+    let ni = 0;
+    images = order
+      .map((entry) => (entry === null ? uploaded[ni++] : entry))
+      .filter((u): u is string => typeof u === "string" && u.length > 0);
+  } else {
+    const existing = String(formData.get("existingImages") ?? "");
+    if (existing) {
+      try {
+        images = JSON.parse(existing) as string[];
+      } catch {
+        /* ignore */
+      }
+    }
+    images = [...images, ...uploaded];
   }
 
   const specs: Spec[] = [];
@@ -113,6 +139,7 @@ export async function saveProductAction(
     shortDescription,
     description,
     price,
+    cost,
     oldPrice,
     stages,
     capacity,

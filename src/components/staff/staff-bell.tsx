@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { Bell } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { fetchStaffNotificationsAction } from "@/lib/notifications-actions";
 import type { StaffNotif } from "@/lib/data";
 import { useI18n } from "@/i18n/i18n-context";
@@ -38,26 +40,28 @@ export function StaffBell({
   const label = area === "confirmation" ? t("staff.bell.ordersToConfirm") : t("staff.bell.installationsToDo");
 
   return (
-    <div ref={ref} className="relative">
-      <button
+    <div ref={ref} className="relative font-semibold">
+      <Button
+        variant="ghost"
+        size="icon"
         onClick={() => setOpen((v) => !v)}
-        className="relative flex h-10 w-10 items-center justify-center rounded-full text-ink hover:bg-neutral-100"
-        aria-label={t("staff.bell.notificationsAria")}
+        className="relative"
       >
+        <span className="sr-only">{t("staff.bell.notificationsAria")}</span>
         <Bell className="h-5 w-5" />
         {notif.count > 0 && (
           <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
             {notif.count > 9 ? "9+" : notif.count}
           </span>
         )}
-      </button>
+      </Button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-2xl border border-line bg-white shadow-[var(--shadow-soft)]">
+        <Card className="absolute right-0 top-full z-50 mt-2 w-80 gap-0 rounded-2xl border border-line bg-white py-0 shadow-[var(--shadow-soft)] ring-0">
           <div className="border-b border-line px-4 py-3 font-display font-semibold text-ink">{label}</div>
           <div className="max-h-96 overflow-y-auto">
             {notif.items.length === 0 ? (
-              <div className="px-4 py-10 text-center text-sm text-ink-soft">{t("staff.bell.empty")}</div>
+              <div className="px-4 py-10 text-center text-sm font-semibold text-ink-soft">{t("staff.bell.empty")}</div>
             ) : (
               notif.items.map((it) => (
                 <Link
@@ -70,14 +74,14 @@ export function StaffBell({
                     <Bell className="h-4 w-4" />
                   </span>
                   <span className="min-w-0 flex-1 text-sm">
-                    <span dir="auto" className="block font-medium text-ink">{it.title}</span>
+                    <span dir="auto" className="block font-semibold text-ink">{it.title}</span>
                     <span dir="auto" className="block text-xs text-ink-soft">{it.subtitle}</span>
                   </span>
                 </Link>
               ))
             )}
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );

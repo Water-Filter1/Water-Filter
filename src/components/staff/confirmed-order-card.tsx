@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, MapPin, CalendarClock, X, User } from "lucide-react";
 import { recordCallOutcomeAction } from "@/lib/order-actions";
 import { formatMAD, waNumber, formatDateTime } from "@/lib/utils";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/i18n-context";
 import type { Order } from "@/lib/types";
 
@@ -30,7 +33,8 @@ export function ConfirmedOrderCard({ order }: { order: Order }) {
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <Card className="font-semibold shadow-sm">
+      <CardContent>
       <div className="flex items-center justify-between gap-3">
         <span className="font-display font-bold text-ink">{order.id}</span>
         <span className="font-display text-lg font-extrabold text-brand-700">
@@ -38,12 +42,12 @@ export function ConfirmedOrderCard({ order }: { order: Order }) {
         </span>
       </div>
 
-      <p className="mt-2 flex items-center gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-sm font-medium text-brand-800">
+      <p className="mt-2 flex items-center gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-800">
         <CalendarClock className="h-4 w-4 shrink-0" /> {formatWhen(order.installDate, t)}
       </p>
 
       <div className="mt-3 space-y-1 text-sm">
-        <p className="flex items-center gap-2 font-medium text-ink" dir="auto">
+        <p className="flex items-center gap-2 font-semibold text-ink" dir="auto">
           <User className="h-4 w-4 shrink-0 text-ink-soft" /> {order.customerName}
         </p>
         <p className="flex items-start gap-2 text-ink-soft" dir="auto">
@@ -54,9 +58,9 @@ export function ConfirmedOrderCard({ order }: { order: Order }) {
         )}
         <div className="flex flex-wrap gap-1.5 pt-1">
           {order.items.map((it, i) => (
-            <span key={i} className="rounded-lg bg-slate-50 px-2 py-1 text-xs text-ink" dir="auto">
-              {it.name} ×{it.qty}
-            </span>
+            <Badge key={i} tone="neutral" className="rounded-lg bg-slate-50 px-2 py-1 text-xs text-ink" >
+              <span dir="auto">{it.name} ×{it.qty}</span>
+            </Badge>
           ))}
         </div>
       </div>
@@ -80,13 +84,15 @@ export function ConfirmedOrderCard({ order }: { order: Order }) {
         </a>
       </div>
 
-      <button
+      <Button
+        variant="outline"
         onClick={cancel}
         disabled={pending}
-        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-full border border-rose-200 bg-white py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60"
+        className="mt-2 w-full border-rose-200 bg-white py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60"
       >
         <X className="h-4 w-4" /> {pending ? t("conf.confirmed.cancelling") : t("conf.confirmed.cancelOrder")}
-      </button>
-    </div>
+      </Button>
+      </CardContent>
+    </Card>
   );
 }

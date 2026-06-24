@@ -6,6 +6,16 @@ import { Plus, Trash2, PhoneCall, X } from "lucide-react";
 import { createPhoneOrderAction } from "@/lib/order-actions";
 import { formatMAD } from "@/lib/utils";
 import { useI18n } from "@/i18n/i18n-context";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type PickItem = { id: string; name: string; price: number };
 
@@ -46,100 +56,106 @@ export function PhoneOrderForm({ products }: { products: PickItem[] }) {
     });
   }
 
-  const input =
-    "h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-100";
+  const input = "h-11 w-full rounded-xl px-3 text-sm";
 
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700"
-      >
+      <Button onClick={() => setOpen(true)} className="font-semibold">
         <PhoneCall className="h-4 w-4" /> {t("conf.phone.addOrderButton")}
-      </button>
+      </Button>
     );
   }
 
   return (
-    <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 font-display font-bold text-ink">
-          <PhoneCall className="h-5 w-5 text-brand-500" /> {t("conf.phone.title")}
-        </h2>
-        <button type="button" onClick={() => setOpen(false)} className="text-ink-soft hover:text-ink">
-          <X className="h-5 w-5" />
-        </button>
-      </div>
+    <form onSubmit={submit} className="font-semibold">
+      <Card className="gap-0 border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 font-display font-bold text-ink">
+            <PhoneCall className="h-5 w-5 text-brand-500" /> {t("conf.phone.title")}
+          </h2>
+          <Button variant="ghost" size="icon-sm" onClick={() => setOpen(false)} className="text-ink-soft hover:text-ink">
+            <X className="h-5 w-5" />
+            <span className="sr-only">{t("conf.phone.title")}</span>
+          </Button>
+        </div>
 
-      {error && <div className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</div>}
-      {okMsg && <div className="mb-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{okMsg}</div>}
+        {error && <div className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</div>}
+        {okMsg && <div className="mb-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{okMsg}</div>}
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <input required value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} className={input} placeholder={t("conf.phone.customerNamePlaceholder")} />
-        <input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={input} placeholder={t("conf.phone.phonePlaceholder")} inputMode="tel" />
-        <input required value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className={input} placeholder={t("conf.phone.cityPlaceholder")} />
-        <input required value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className={input} placeholder={t("conf.phone.addressPlaceholder")} />
-      </div>
-      <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className={`${input} mt-3`} placeholder={t("conf.phone.notePlaceholder")} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input required value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} className={input} placeholder={t("conf.phone.customerNamePlaceholder")} />
+          <Input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={input} placeholder={t("conf.phone.phonePlaceholder")} inputMode="tel" />
+          <Input required value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className={input} placeholder={t("conf.phone.cityPlaceholder")} />
+          <Input required value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className={input} placeholder={t("conf.phone.addressPlaceholder")} />
+        </div>
+        <Input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className={`${input} mt-3`} placeholder={t("conf.phone.notePlaceholder")} />
 
-      {/* Products */}
-      <div className="mt-4 space-y-2">
-        <p className="text-sm font-medium text-ink">{t("conf.phone.productsLabel")}</p>
-        {rows.map((r, i) => (
-          <div key={i} className="flex gap-2">
-            <select
-              value={r.productId}
-              onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, productId: e.target.value } : x)))}
-              className={`${input} flex-1`}
-            >
-              <option value="">{t("conf.phone.productOptionPlaceholder")}</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({formatMAD(p.price)})
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min={1}
-              max={99}
-              value={r.qty}
-              onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, qty: Math.max(1, Number(e.target.value) || 1) } : x)))}
-              className={`${input} w-20`}
-            />
-            {rows.length > 1 && (
-              <button
-                type="button"
-                onClick={() => setRows(rows.filter((_, j) => j !== i))}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-ink-soft hover:bg-rose-50 hover:text-rose-600"
+        {/* Products */}
+        <div className="mt-4 space-y-2">
+          <p className="text-sm font-semibold text-ink">{t("conf.phone.productsLabel")}</p>
+          {rows.map((r, i) => (
+            <div key={i} className="flex gap-2">
+              <Select
+                value={r.productId}
+                onValueChange={(v) => setRows(rows.map((x, j) => (j === i ? { ...x, productId: String(v ?? "") } : x)))}
               >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => setRows([...rows, { productId: "", qty: 1 }])}
-          className="flex items-center gap-1.5 text-sm font-semibold text-brand-600 hover:text-brand-700"
-        >
-          <Plus className="h-4 w-4" /> {t("conf.phone.addProductButton")}
-        </button>
-      </div>
+                <SelectTrigger className={`${input} flex-1`}>
+                  <SelectValue placeholder={t("conf.phone.productOptionPlaceholder")}>
+                    {(value) => {
+                      const p = byId.get(String(value));
+                      return p ? `${p.name} (${formatMAD(p.price)})` : t("conf.phone.productOptionPlaceholder");
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {products.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} ({formatMAD(p.price)})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                type="number"
+                min={1}
+                max={99}
+                value={r.qty}
+                onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, qty: Math.max(1, Number(e.target.value) || 1) } : x)))}
+                className={`${input} w-20`}
+              />
+              {rows.length > 1 && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setRows(rows.filter((_, j) => j !== i))}
+                  className="h-11 w-11 shrink-0 rounded-xl text-ink-soft hover:bg-rose-50 hover:text-rose-600"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="sr-only">{t("conf.phone.productsLabel")}</span>
+                </Button>
+              )}
+            </div>
+          ))}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setRows([...rows, { productId: "", qty: 1 }])}
+            className="gap-1.5 px-0 text-sm font-semibold text-brand-600 hover:bg-transparent hover:text-brand-700"
+          >
+            <Plus className="h-4 w-4" /> {t("conf.phone.addProductButton")}
+          </Button>
+        </div>
 
-      <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
-        <span className="text-sm text-ink-soft">
-          {t("conf.phone.subtotalLabel")} <b className="text-ink">{formatMAD(subtotal)}</b>
-          <span className="block text-xs">{t("conf.phone.deliveryNote")}</span>
-        </span>
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-full bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:opacity-60"
-        >
-          {pending ? t("conf.phone.submitting") : t("conf.phone.submitButton")}
-        </button>
-      </div>
+        <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+          <span className="text-sm text-ink-soft">
+            {t("conf.phone.subtotalLabel")} <b className="text-ink">{formatMAD(subtotal)}</b>
+            <span className="block text-xs">{t("conf.phone.deliveryNote")}</span>
+          </span>
+          <Button type="submit" disabled={pending} className="font-semibold">
+            {pending ? t("conf.phone.submitting") : t("conf.phone.submitButton")}
+          </Button>
+        </div>
+      </Card>
     </form>
   );
 }

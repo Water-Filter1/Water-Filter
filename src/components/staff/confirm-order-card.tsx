@@ -16,6 +16,18 @@ import { confirmOrderAction, recordCallOutcomeAction, logWhatsappAction } from "
 import { formatMAD, formatDate, waNumber } from "@/lib/utils";
 import type { Order } from "@/lib/types";
 import { useI18n } from "@/i18n/i18n-context";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export function ConfirmOrderCard({
   order,
@@ -69,18 +81,14 @@ export function ConfirmOrderCard({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <Card className="gap-0 rounded-2xl py-0 font-semibold ring-slate-200">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 px-5 pt-4">
         <div className="flex items-center gap-2">
           <span className="font-display font-bold text-ink">{order.id}</span>
-          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-            {t("conf.card.statusToConfirm")}
-          </span>
+          <Badge tone="best">{t("conf.card.statusToConfirm")}</Badge>
           {order.source === "phone" && (
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-ink-soft">
-              {t("conf.card.sourcePhone")}
-            </span>
+            <Badge tone="neutral">{t("conf.card.sourcePhone")}</Badge>
           )}
         </div>
         <span className="text-xs text-ink-soft">{formatDate(order.createdAt)}</span>
@@ -89,7 +97,7 @@ export function ConfirmOrderCard({
       {/* Body: client + products */}
       <div className="grid gap-4 px-5 py-4 sm:grid-cols-[1fr_auto]">
         <div className="space-y-1.5 text-sm">
-          <p className="flex items-center gap-2 font-medium text-ink" dir="auto">
+          <p className="flex items-center gap-2 font-semibold text-ink" dir="auto">
             <User className="h-4 w-4 shrink-0 text-ink-soft" /> {order.customerName}
           </p>
           <a href={`tel:${tel}`} className="flex items-center gap-2 text-ink-soft hover:text-brand-600">
@@ -119,7 +127,7 @@ export function ConfirmOrderCard({
         </p>
       )}
       {order.confirmationNote && (
-        <p className="mx-5 mb-2 text-xs font-medium text-amber-600">⏱ {order.confirmationNote}</p>
+        <p className="mx-5 mb-2 text-xs font-semibold text-amber-600">⏱ {order.confirmationNote}</p>
       )}
 
       {/* Quick contact */}
@@ -147,71 +155,87 @@ export function ConfirmOrderCard({
 
         {plombiers.length > 0 && (
           <>
-            <label className="mb-1 block text-xs font-medium text-ink-soft">{t("conf.card.assignedTechnician")}</label>
-            <select
-              value={assignedTo}
-              onChange={(e) => setAssignedTo(e.target.value)}
-              className="mb-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-100"
-            >
-              {plombiers.map((p) => (
-                <option key={p.email} value={p.email}>
-                  {p.name ?? p.email}
-                  {p.city ? ` — ${p.city}` : ""}
-                  {p.city && p.city.trim().toLowerCase() === order.city.trim().toLowerCase()
-                    ? " ✓"
-                    : ""}
-                </option>
-              ))}
-            </select>
+            <Label className="mb-1 block text-xs font-semibold text-ink-soft">{t("conf.card.assignedTechnician")}</Label>
+            <Select value={assignedTo} onValueChange={(v) => setAssignedTo(String(v))}>
+              <SelectTrigger className="mb-2 h-11 w-full rounded-xl bg-white">
+                <SelectValue>
+                  {(value) => {
+                    const p = plombiers.find((x) => x.email === String(value));
+                    if (!p) return "";
+                    const match =
+                      p.city && p.city.trim().toLowerCase() === order.city.trim().toLowerCase();
+                    return `${p.name ?? p.email}${p.city ? ` — ${p.city}` : ""}${match ? " ✓" : ""}`;
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {plombiers.map((p) => (
+                  <SelectItem key={p.email} value={p.email}>
+                    {p.name ?? p.email}
+                    {p.city ? ` — ${p.city}` : ""}
+                    {p.city && p.city.trim().toLowerCase() === order.city.trim().toLowerCase()
+                      ? " ✓"
+                      : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </>
         )}
 
-        <label className="mb-1 block text-xs font-medium text-ink-soft">{t("conf.card.plannedInstallDate")}</label>
-        <input
+        <Label className="mb-1 block text-xs font-semibold text-ink-soft">{t("conf.card.plannedInstallDate")}</Label>
+        <Input
           type="datetime-local"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-100"
+          className="h-11 w-full rounded-xl bg-white px-3 text-sm"
         />
-        <input
+        <Input
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder={t("conf.card.notePlaceholder")}
-          className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-100"
+          className="mt-2 h-11 w-full rounded-xl bg-white px-3 text-sm"
         />
         {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => outcome("rappeler")}
             disabled={pending}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-ink-soft transition hover:bg-slate-50 disabled:opacity-60"
+            className="gap-1.5 bg-white px-3 py-2 text-xs font-semibold text-ink-soft"
           >
             <RotateCcw className="h-3.5 w-3.5" /> {t("conf.card.toCallBack")}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => outcome("pas_reponse")}
             disabled={pending}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-ink-soft transition hover:bg-slate-50 disabled:opacity-60"
+            className="gap-1.5 bg-white px-3 py-2 text-xs font-semibold text-ink-soft"
           >
             <PhoneOff className="h-3.5 w-3.5" /> {t("conf.card.noAnswer")}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => outcome("annuler")}
             disabled={pending}
-            className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60"
+            className="gap-1.5 border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
           >
             <X className="h-3.5 w-3.5" /> {t("conf.card.cancel")}
-          </button>
-          <button
+          </Button>
+          <Button
+            size="sm"
             onClick={confirm}
             disabled={pending}
-            className="ms-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-60"
+            className="ms-auto gap-1.5 bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600"
           >
             <Check className="h-4 w-4" /> {pending ? "…" : t("conf.card.confirmAndSchedule")}
-          </button>
+          </Button>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }

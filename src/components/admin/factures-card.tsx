@@ -39,8 +39,8 @@ export function FacturesCard({ invoiceable, recent }: { invoiceable: Order[]; re
   }
 
   return (
-    <Card className="gap-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-sm ring-0">
-      <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 px-5 py-4">
+    <Card className="gap-0 overflow-hidden rounded-2xl border border-border bg-card p-0 shadow-sm ring-0">
+      <CardHeader className="flex flex-row items-center justify-between border-b border-border px-5 py-4">
         <div className="flex items-center gap-2">
           <Badge className="h-8 w-8 justify-center rounded-lg bg-emerald-50 p-0 text-emerald-600">
             <Receipt className="h-4 w-4" />
@@ -63,7 +63,7 @@ export function FacturesCard({ invoiceable, recent }: { invoiceable: Order[]; re
         <Table>
           <TableBody>
             {invoiceable.map((o) => (
-              <TableRow key={o.id} className="border-0 hover:bg-slate-50">
+              <TableRow key={o.id} className="border-0 hover:bg-muted/50">
                 <TableCell className="py-3 ps-5">
                   <span className="flex flex-col">
                     <span className="text-sm font-semibold text-ink" dir="auto">
@@ -98,7 +98,7 @@ export function FacturesCard({ invoiceable, recent }: { invoiceable: Order[]; re
         <Table>
           <TableBody>
             {recent.map((inv) => (
-              <TableRow key={inv.id} className="border-0 hover:bg-slate-50">
+              <TableRow key={inv.id} className="border-0 hover:bg-muted/50">
                 <TableCell className="py-3 ps-5">
                   <Link href={`/admin/factures/${inv.id}`} className="flex flex-col">
                     <span className="text-sm font-semibold text-brand-700">{inv.ref}</span>

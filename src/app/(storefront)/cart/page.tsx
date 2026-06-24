@@ -72,7 +72,7 @@ export default function CartPage() {
                   alt={item.name}
                   hue={item.hue}
                   sizes="96px"
-                  className="p-1.5"
+                  className="object-cover"
                 />
               </Link>
               <div className="flex flex-1 flex-col">

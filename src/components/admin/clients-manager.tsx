@@ -2,25 +2,35 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Label as ChartLabel, Pie, PieChart, Cell } from "recharts";
 import {
   Users,
-  UserCheck,
   ShoppingCart,
   UserPlus,
-  UserX,
+  PackageCheck,
   Wallet,
   Eye,
   Phone,
   MessageCircle,
   Pencil,
-  X,
   MapPin,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
+  ChevronUp,
+  ChevronDown,
   Loader2,
   Power,
   Mail,
+  Star,
+  Receipt,
+  Wrench,
+  ShoppingBag,
+  StickyNote,
+  X,
+  Plus,
 } from "lucide-react";
 import { useI18n } from "@/i18n/i18n-context";
 import { formatMAD, formatDate, cn, waNumber } from "@/lib/utils";
@@ -28,24 +38,62 @@ import {
   getClientDetailAction,
   setClientStatusAction,
   updateClientAction,
+  setClientTagsAction,
+  addClientNoteAction,
+  createClientAction,
 } from "@/lib/client-actions";
-import type { ClientRow, ClientSegments, ClientDetail } from "@/lib/data";
+import type { ClientRow, ClientSegments, ClientDetail, ClientLifecycle, ClientTimelineEvent } from "@/lib/data";
 import { STATUS_META } from "@/lib/order-status";
+import { dashboardFont, dashboardFontStyle } from "@/lib/fonts";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { SearchInput } from "@/components/admin/search-input";
 import { Card } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
 
 const PAGE = 10;
-type Tab = "all" | "withOrders" | "newMonth" | "inactive";
-
 const CITY_COLORS = ["#3b82f6", "#22c55e", "#14b8a6", "#f59e0b", "#ef4444"];
 
+type Seg = "all" | ClientLifecycle | "vip";
+type SortKey = "name" | "orderCount" | "totalSpent" | "lastOrderAt";
+type SortDir = "asc" | "desc";
+
 const shortId = (id: string) => "#CLT-" + id.slice(-6).toUpperCase();
-const startOfMonth = () => {
-  const n = new Date();
-  return new Date(n.getFullYear(), n.getMonth(), 1).getTime();
+
+/** Lifecycle badge colors. */
+const LIFE_STYLE: Record<ClientLifecycle, string> = {
+  lead: "bg-slate-100 text-slate-600",
+  new: "bg-brand-100 text-brand-700",
+  active: "bg-emerald-100 text-emerald-700",
+  due: "bg-amber-100 text-amber-700",
+  lost: "bg-rose-100 text-rose-600",
 };
+
+function lifeLabel(t: (k: string) => string, life: ClientLifecycle) {
+  return t(`admin.crm.seg.${life}`);
+}
+
+function outcomeLabel(t: (k: string) => string, o: string) {
+  if (o === "rappeler") return t("admin.ordersPage.outcomeCallBack");
+  if (o === "pas_reponse") return t("admin.ordersPage.outcomeNoAnswer");
+  return t(`status.${o}`);
+}
+
+function channelLabel(t: (k: string) => string, ch: string) {
+  if (ch === "__unknown__") return t("admin.crm.channelUnknown");
+  if (ch === "referral") return t("admin.crm.channelReferral");
+  if (ch === "other") return t("admin.crm.channelOther");
+  return ch.charAt(0).toUpperCase() + ch.slice(1); // Facebook, Tiktok, Instagram, Google
+}
 
 export function ClientsManager({
   clients,
@@ -55,23 +103,28 @@ export function ClientsManager({
   segments: ClientSegments;
 }) {
   const { t } = useI18n();
-  const [tab, setTab] = useState<Tab>("all");
+  const [seg, setSeg] = useState<Seg>("all");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
+  const [sortKey, setSortKey] = useState<SortKey>("lastOrderAt");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const [detail, setDetail] = useState<ClientDetail | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  const router = useRouter();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [cForm, setCForm] = useState({ phone: "", name: "", city: "", email: "", address: "" });
+  const [cBusy, setCBusy] = useState(false);
+  const [cError, setCError] = useState<string | null>(null);
+
   const pct = (v: number) => (segments.total ? Math.round((v / segments.total) * 100) : 0);
 
   const filtered = useMemo(() => {
-    const startMonth = startOfMonth();
     let list = clients;
-    if (tab === "withOrders") list = list.filter((c) => c.orderCount > 0);
-    else if (tab === "inactive") list = list.filter((c) => c.status === "inactive");
-    else if (tab === "newMonth")
-      list = list.filter((c) => new Date(c.firstOrderAt).getTime() >= startMonth);
+    if (seg === "vip") list = list.filter((c) => c.isVip);
+    else if (seg !== "all") list = list.filter((c) => c.lifecycle === seg);
     const s = q.trim().toLowerCase();
     if (s)
       list = list.filter(
@@ -81,8 +134,20 @@ export function ClientsManager({
           c.city.toLowerCase().includes(s) ||
           (c.email ?? "").toLowerCase().includes(s),
       );
-    return list;
-  }, [clients, tab, q]);
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...list].sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "name") cmp = a.name.localeCompare(b.name);
+      else if (sortKey === "orderCount") cmp = a.orderCount - b.orderCount;
+      else if (sortKey === "totalSpent") cmp = a.totalSpent - b.totalSpent;
+      else {
+        const av = a.lastOrderAt ? new Date(a.lastOrderAt).getTime() : 0;
+        const bv = b.lastOrderAt ? new Date(b.lastOrderAt).getTime() : 0;
+        cmp = av - bv;
+      }
+      return cmp * dir;
+    });
+  }, [clients, seg, q, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const safePage = Math.min(page, totalPages);
@@ -90,9 +155,17 @@ export function ClientsManager({
   const from = filtered.length === 0 ? 0 : (safePage - 1) * PAGE + 1;
   const to = Math.min(safePage * PAGE, filtered.length);
 
-  function switchTab(next: Tab) {
-    setTab(next);
+  function switchSeg(next: Seg) {
+    setSeg(next);
     setPage(1);
+  }
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir(key === "name" ? "asc" : "desc");
+    }
   }
 
   async function openDetail(phone: string) {
@@ -104,21 +177,72 @@ export function ClientsManager({
     setDetailLoading(false);
   }
 
+  async function submitCreate() {
+    setCBusy(true);
+    setCError(null);
+    const res = await createClientAction({
+      phone: cForm.phone,
+      name: cForm.name,
+      city: cForm.city,
+      email: cForm.email || null,
+      address: cForm.address || null,
+    });
+    setCBusy(false);
+    if (res.ok) {
+      setCreateOpen(false);
+      setCForm({ phone: "", name: "", city: "", email: "", address: "" });
+      router.refresh();
+    } else {
+      setCError(
+        res.error === "EXISTS"
+          ? t("admin.crm.errExists")
+          : res.error === "INVALID_PHONE"
+            ? t("admin.crm.errPhone")
+            : t("admin.crm.errorGeneric"),
+      );
+    }
+  }
+
   const KPIS = [
     { icon: Users, tone: "bg-brand-50 text-brand-600", label: t("admin.crm.kpiTotal"), value: String(segments.total), hint: t("admin.crm.kpiTotalHint") },
-    { icon: UserCheck, tone: "bg-emerald-50 text-emerald-600", label: t("admin.crm.kpiActive"), value: String(segments.active), hint: t("admin.crm.ofTotal", { pct: pct(segments.active) }) },
-    { icon: ShoppingCart, tone: "bg-amber-50 text-amber-600", label: t("admin.crm.kpiWithOrders"), value: String(segments.withOrders), hint: t("admin.crm.ofTotal", { pct: pct(segments.withOrders) }) },
-    { icon: UserPlus, tone: "bg-indigo-50 text-indigo-600", label: t("admin.crm.kpiNewMonth"), value: String(segments.newThisMonth), hint: t("admin.crm.ofTotal", { pct: pct(segments.newThisMonth) }) },
-    { icon: UserX, tone: "bg-rose-50 text-rose-600", label: t("admin.crm.kpiInactive"), value: String(segments.inactive), hint: t("admin.crm.ofTotal", { pct: pct(segments.inactive) }) },
-    { icon: Wallet, tone: "bg-sky-50 text-sky-600", label: t("admin.crm.kpiRevenue"), value: formatMAD(segments.revenue), hint: t("admin.crm.kpiTotalHint") },
+    { icon: ShoppingCart, tone: "bg-emerald-50 text-emerald-600", label: t("admin.crm.kpiWithOrders"), value: String(segments.acheteurs), hint: t("admin.crm.ofTotal", { pct: pct(segments.acheteurs) }) },
+    { icon: PackageCheck, tone: "bg-indigo-50 text-indigo-600", label: t("admin.crm.kpiInstalled"), value: String(segments.installed), hint: t("admin.crm.kpiInstalledHint") },
+    { icon: Wrench, tone: "bg-amber-50 text-amber-600", label: t("admin.crm.kpiDue"), value: String(segments.due), hint: t("admin.crm.kpiDueHint") },
+    { icon: UserPlus, tone: "bg-sky-50 text-sky-600", label: t("admin.crm.kpiNewMonth"), value: String(segments.newThisMonth), hint: t("admin.crm.ofTotal", { pct: pct(segments.newThisMonth) }) },
+    { icon: Wallet, tone: "bg-violet-50 text-violet-600", label: t("admin.crm.kpiRevenue"), value: formatMAD(segments.revenue), hint: t("admin.crm.kpiRevenueHint") },
   ];
 
-  const TABS: { key: Tab; label: string; count: number }[] = [
+  const SEGS: { key: Seg; label: string; count: number }[] = [
     { key: "all", label: t("admin.crm.tabAll"), count: segments.total },
-    { key: "withOrders", label: t("admin.crm.tabWithOrders"), count: segments.withOrders },
-    { key: "newMonth", label: t("admin.crm.tabNewMonth"), count: segments.newThisMonth },
-    { key: "inactive", label: t("admin.crm.tabInactive"), count: segments.inactive },
+    { key: "lead", label: lifeLabel(t, "lead"), count: segments.leads },
+    { key: "new", label: lifeLabel(t, "new"), count: segments.newCount },
+    { key: "active", label: lifeLabel(t, "active"), count: segments.active },
+    { key: "due", label: lifeLabel(t, "due"), count: segments.due },
+    { key: "lost", label: lifeLabel(t, "lost"), count: segments.lost },
+    { key: "vip", label: t("admin.crm.seg.vip"), count: segments.vip },
   ];
+
+  function SortHead({ k, children, className }: { k: SortKey; children: React.ReactNode; className?: string }) {
+    const active = sortKey === k;
+    return (
+      <TableHead className={className}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => toggleSort(k)}
+          className="-ms-2 h-auto gap-1 px-2 py-0 font-semibold uppercase tracking-wide text-ink-soft hover:bg-transparent hover:text-ink"
+        >
+          {children}
+          {active ? (
+            sortDir === "asc" ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronsUpDown className="h-3.5 w-3.5 opacity-40" />
+          )}
+        </Button>
+      </TableHead>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -129,21 +253,22 @@ export function ClientsManager({
         ))}
       </div>
 
-      {/* Tabs + search */}
+      {/* Segment chips + search */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1.5">
-          {TABS.map((tb) => (
-            <button
-              key={tb.key}
+          {SEGS.map((s) => (
+            <Button
+              key={s.key}
               type="button"
-              onClick={() => switchTab(tb.key)}
-              className={cn(
-                "rounded-full px-3.5 py-1.5 text-sm font-semibold transition",
-                tab === tb.key ? "bg-brand-600 text-white" : "bg-white text-ink-soft hover:bg-slate-50 border border-slate-200",
-              )}
+              size="sm"
+              variant={seg === s.key ? "primary" : "outline"}
+              onClick={() => switchSeg(s.key)}
+              className="font-semibold"
             >
-              {tb.label} <span className={cn("ms-1", tab === tb.key ? "text-white/80" : "text-ink-soft")}>{tb.count}</span>
-            </button>
+              {s.key === "vip" && <Star className="h-3.5 w-3.5" />}
+              {s.label}
+              <span className={cn("ms-1", seg === s.key ? "text-white/80" : "text-ink-soft")}>{s.count}</span>
+            </Button>
           ))}
         </div>
         <SearchInput
@@ -157,19 +282,29 @@ export function ClientsManager({
         />
       </div>
 
+      {/* Range + new client */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-ink-soft">
+          {t("admin.crm.range", { from, to, total: filtered.length })}
+        </p>
+        <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5 font-semibold">
+          <Plus className="h-4 w-4" /> {t("admin.crm.newClient")}
+        </Button>
+      </div>
+
       {/* Table */}
       <Card className="gap-0 overflow-hidden p-0">
         <div className="overflow-x-auto">
-          <Table className="min-w-[820px]">
+          <Table className="min-w-[900px]">
             <TableHeader>
               <TableRow className="text-xs uppercase tracking-wide text-ink-soft">
                 <TableHead>{t("admin.crm.thId")}</TableHead>
-                <TableHead>{t("admin.crm.thName")}</TableHead>
+                <SortHead k="name">{t("admin.crm.thName")}</SortHead>
                 <TableHead>{t("admin.crm.thPhone")}</TableHead>
                 <TableHead>{t("admin.crm.thCity")}</TableHead>
-                <TableHead>{t("admin.crm.thOrders")}</TableHead>
-                <TableHead>{t("admin.crm.thSpent")}</TableHead>
-                <TableHead>{t("admin.crm.thLastOrder")}</TableHead>
+                <SortHead k="orderCount">{t("admin.crm.thOrders")}</SortHead>
+                <SortHead k="totalSpent">{t("admin.crm.thSpent")}</SortHead>
+                <SortHead k="lastOrderAt">{t("admin.crm.thLastOrder")}</SortHead>
                 <TableHead>{t("admin.crm.thStatus")}</TableHead>
                 <TableHead className="text-end">{t("admin.crm.thActions")}</TableHead>
               </TableRow>
@@ -186,48 +321,35 @@ export function ClientsManager({
                   <TableRow
                     key={c.id}
                     onClick={() => openDetail(c.phone)}
-                    className="cursor-pointer hover:bg-slate-50"
+                    className="cursor-pointer hover:bg-muted/50"
                   >
-                    <TableCell className="font-mono text-xs text-brand-700">{shortId(c.id)}</TableCell>
-                    <TableCell className="font-medium text-ink" dir="auto">{c.name}</TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()} className="font-mono text-xs">
+                      <Link href={`/admin/clients/${c.id}`} className="text-brand-700 hover:underline">{shortId(c.id)}</Link>
+                    </TableCell>
+                    <TableCell dir="auto">
+                      <span className="flex items-center gap-2 font-semibold text-ink">
+                        {c.name}
+                        {c.isVip && <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-ink-soft" dir="ltr">{c.phone}</TableCell>
                     <TableCell className="text-ink-soft" dir="auto">{c.city || "—"}</TableCell>
                     <TableCell className="font-semibold text-ink">{c.orderCount}</TableCell>
                     <TableCell className="font-semibold text-ink">{formatMAD(c.totalSpent)}</TableCell>
                     <TableCell className="text-ink-soft">{c.lastOrderAt ? formatDate(c.lastOrderAt) : "—"}</TableCell>
                     <TableCell>
-                      <span
-                        className={cn(
-                          "rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                          c.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
-                        )}
-                      >
-                        {c.status === "active" ? t("admin.crm.statusActive") : t("admin.crm.statusInactive")}
-                      </span>
+                      <Badge className={cn("text-xs", LIFE_STYLE[c.lifecycle])}>{lifeLabel(t, c.lifecycle)}</Badge>
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => openDetail(c.phone)}
-                          title={t("admin.crm.viewClient")}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft transition hover:bg-brand-50 hover:text-brand-600"
-                        >
+                        <Button variant="ghost" size="icon-sm" onClick={() => openDetail(c.phone)} className="rounded-lg text-ink-soft hover:bg-brand-50 hover:text-brand-600">
                           <Eye className="h-4 w-4" />
-                        </button>
-                        <a
-                          href={`tel:${c.phone}`}
-                          title={t("admin.crm.actCall")}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft transition hover:bg-brand-50 hover:text-brand-600"
-                        >
+                          <span className="sr-only">{t("admin.crm.viewClient")}</span>
+                        </Button>
+                        <a href={`tel:${c.phone}`} title={t("admin.crm.actCall")} className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft transition hover:bg-brand-50 hover:text-brand-600">
                           <Phone className="h-4 w-4" />
                         </a>
-                        <a
-                          href={`https://wa.me/${waNumber(c.phone)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="WhatsApp"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft transition hover:bg-emerald-50 hover:text-emerald-600"
-                        >
+                        <a href={`https://wa.me/${waNumber(c.phone)}`} target="_blank" rel="noopener noreferrer" title="WhatsApp" className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft transition hover:bg-emerald-50 hover:text-emerald-600">
                           <MessageCircle className="h-4 w-4" />
                         </a>
                       </div>
@@ -240,68 +362,98 @@ export function ClientsManager({
         </div>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm">
-          <span className="text-ink-soft">
-            {t("admin.crm.range", { from, to, total: filtered.length })}
-          </span>
+        <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm">
+          <span className="font-semibold text-ink-soft">{t("admin.crm.range", { from, to, total: filtered.length })}</span>
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={safePage <= 1}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-ink-soft transition hover:bg-slate-50 disabled:opacity-40"
-            >
+            <Button variant="outline" size="icon-sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1} className="text-ink-soft">
               <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="px-2 font-semibold text-ink">
-              {safePage} / {totalPages}
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={safePage >= totalPages}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-ink-soft transition hover:bg-slate-50 disabled:opacity-40"
-            >
+              <span className="sr-only">prev</span>
+            </Button>
+            <span className="px-2 font-semibold text-ink">{safePage} / {totalPages}</span>
+            <Button variant="outline" size="icon-sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages} className="text-ink-soft">
               <ChevronRight className="h-4 w-4" />
-            </button>
+              <span className="sr-only">next</span>
+            </Button>
           </div>
         </div>
       </Card>
 
       {/* Bottom widgets */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
         <CityDonut segments={segments} />
+        <Channels segments={segments} />
         <TopSpenders segments={segments} />
         <NewClients segments={segments} />
       </div>
 
-      {/* Detail drawer */}
-      {detailOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setDetailOpen(false)} />
-          <aside className="relative z-10 h-full w-full max-w-md overflow-y-auto bg-white shadow-2xl">
-            <ClientDetailPanel
-              detail={detail}
-              loading={detailLoading}
-              onClose={() => setDetailOpen(false)}
-              onChanged={(d) => setDetail(d)}
-            />
-          </aside>
-        </div>
-      )}
+      {/* Detail sheet (font-scoped so the portal stays on the dashboard font) */}
+      <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
+        <SheetContent
+          side="right"
+          className={cn(dashboardFont.variable, "w-full gap-0 overflow-y-auto p-0 font-semibold sm:max-w-md")}
+          style={dashboardFontStyle}
+        >
+          <SheetHeader className="border-b border-border px-5 py-4">
+            <SheetTitle className="font-display font-bold text-ink">{t("admin.crm.detailTitle")}</SheetTitle>
+          </SheetHeader>
+          <ClientDetailPanel detail={detail} loading={detailLoading} onChanged={(d) => setDetail(d)} />
+        </SheetContent>
+      </Sheet>
+
+      {/* New client dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent
+          className={cn(dashboardFont.variable, "font-semibold sm:max-w-md")}
+          style={dashboardFontStyle}
+        >
+          <DialogHeader>
+            <DialogTitle className="font-display font-bold text-ink">{t("admin.crm.createTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-ink-soft">{t("admin.crm.createPhone")} *</Label>
+              <Input value={cForm.phone} onChange={(e) => setCForm({ ...cForm, phone: e.target.value })} dir="ltr" inputMode="tel" placeholder="06 12 34 56 78" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-semibold text-ink-soft">{t("admin.crm.editName")} *</Label>
+              <Input value={cForm.name} onChange={(e) => setCForm({ ...cForm, name: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Input value={cForm.city} onChange={(e) => setCForm({ ...cForm, city: e.target.value })} placeholder={t("admin.crm.editCity")} />
+              <Input value={cForm.email} onChange={(e) => setCForm({ ...cForm, email: e.target.value })} placeholder={t("admin.crm.editEmail")} inputMode="email" />
+            </div>
+            <Input value={cForm.address} onChange={(e) => setCForm({ ...cForm, address: e.target.value })} placeholder={t("admin.crm.editAddress")} />
+            {cError && <p className="text-sm font-semibold text-rose-600">{cError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} className="font-semibold">{t("admin.crm.cancel")}</Button>
+            <Button onClick={submitCreate} disabled={cBusy || !cForm.phone.trim() || cForm.name.trim().length < 2} className="gap-1.5 font-semibold">
+              {cBusy && <Loader2 className="h-4 w-4 animate-spin" />} {t("admin.crm.create")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 /* ---------------- Detail panel ---------------- */
 
-function ClientDetailPanel({
+const EVT_META: Record<ClientTimelineEvent["type"], { icon: typeof Receipt; tone: string; labelKey: string }> = {
+  order: { icon: ShoppingBag, tone: "bg-brand-50 text-brand-600", labelKey: "admin.crm.evtOrder" },
+  maintenance: { icon: Wrench, tone: "bg-amber-50 text-amber-600", labelKey: "admin.crm.evtMaintenance" },
+  invoice: { icon: Receipt, tone: "bg-emerald-50 text-emerald-600", labelKey: "admin.crm.evtInvoice" },
+  note: { icon: StickyNote, tone: "bg-slate-100 text-slate-600", labelKey: "admin.crm.evtNote" },
+  review: { icon: Star, tone: "bg-violet-50 text-violet-600", labelKey: "admin.crm.evtReview" },
+};
+
+export function ClientDetailPanel({
   detail,
   loading,
-  onClose,
   onChanged,
 }: {
   detail: ClientDetail | null;
   loading: boolean;
-  onClose: () => void;
   onChanged: (d: ClientDetail) => void;
 }) {
   const { t } = useI18n();
@@ -309,16 +461,41 @@ function ClientDetailPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", city: "", email: "", address: "", note: "" });
+  const [tagInput, setTagInput] = useState("");
+  const [noteText, setNoteText] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+
+  async function addTag(raw: string) {
+    const tag = raw.trim();
+    if (!detail || !tag || detail.tags.includes(tag)) return;
+    const optimistic = [...detail.tags, tag];
+    onChanged({ ...detail, tags: optimistic });
+    setTagInput("");
+    const res = await setClientTagsAction(detail.phone, optimistic);
+    onChanged({ ...detail, tags: res.ok ? res.tags : detail.tags }); // reconcile (server caps/cleans) or roll back
+  }
+  async function removeTag(tag: string) {
+    if (!detail) return;
+    const optimistic = detail.tags.filter((x) => x !== tag);
+    onChanged({ ...detail, tags: optimistic });
+    const res = await setClientTagsAction(detail.phone, optimistic);
+    onChanged({ ...detail, tags: res.ok ? res.tags : detail.tags });
+  }
+  async function submitNote() {
+    if (!detail || !noteText.trim()) return;
+    setSavingNote(true);
+    const res = await addClientNoteAction(detail.phone, noteText);
+    setSavingNote(false);
+    if (res.ok) {
+      const ev = { id: res.note.id, type: "note" as const, date: res.note.createdAt, title: res.note.body, amount: null, status: null, href: null };
+      onChanged({ ...detail, notes: [res.note, ...detail.notes], timeline: [ev, ...detail.timeline] });
+      setNoteText("");
+    }
+  }
 
   function startEdit() {
     if (!detail) return;
-    setForm({
-      name: detail.name,
-      city: detail.city,
-      email: detail.email ?? "",
-      address: detail.address ?? "",
-      note: detail.note ?? "",
-    });
+    setForm({ name: detail.name, city: detail.city, email: detail.email ?? "", address: detail.address ?? "", note: detail.note ?? "" });
     setError(null);
     setEditing(true);
   }
@@ -336,14 +513,7 @@ function ClientDetailPanel({
     });
     setBusy(false);
     if (res.ok) {
-      onChanged({
-        ...detail,
-        name: form.name.trim(),
-        city: form.city.trim(),
-        email: form.email.trim() || null,
-        address: form.address.trim() || null,
-        note: form.note.trim() || null,
-      });
+      onChanged({ ...detail, name: form.name.trim(), city: form.city.trim(), email: form.email.trim() || null, address: form.address.trim() || null, note: form.note.trim() || null });
       setEditing(false);
     } else {
       setError(t("admin.crm.errorGeneric"));
@@ -359,153 +529,245 @@ function ClientDetailPanel({
     if (res.ok) onChanged({ ...detail, status: next });
   }
 
-  const input =
-    "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-brand-300 focus:ring-4 focus:ring-brand-100";
+  if (loading || !detail) {
+    return (
+      <div className="space-y-5 p-5">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-14 w-14 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-3 w-20" />
+          </div>
+        </div>
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <Skeleton className="h-24 w-full rounded-xl" />
+        <Skeleton className="h-40 w-full rounded-xl" />
+      </div>
+    );
+  }
 
   return (
-    <div className="flex min-h-full flex-col">
-      <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-        <h3 className="font-display font-bold text-ink">{t("admin.crm.detailTitle")}</h3>
-        <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft hover:bg-slate-100">
-          <X className="h-5 w-5" />
-        </button>
+    <div className="space-y-5 p-5">
+      {/* identity */}
+      <div className="flex items-center gap-3">
+        <Avatar className="h-14 w-14">
+          <AvatarFallback className="bg-brand-100 text-xl font-bold text-brand-700">{detail.name.charAt(0).toUpperCase()}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 truncate font-display text-lg font-bold text-ink" dir="auto">
+            {detail.name}
+            {detail.isVip && <Star className="h-4 w-4 shrink-0 fill-amber-400 text-amber-400" />}
+          </p>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs text-ink-soft">{shortId(detail.id)}</span>
+            <Badge className={cn("text-xs", LIFE_STYLE[detail.lifecycle])}>{lifeLabel(t, detail.lifecycle)}</Badge>
+            <Badge className={cn("text-xs", detail.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600")}>
+              {detail.status === "active" ? t("admin.crm.statusActive") : t("admin.crm.statusInactive")}
+            </Badge>
+          </div>
+        </div>
       </div>
 
-      {loading || !detail ? (
-        <div className="flex flex-1 items-center justify-center py-24 text-ink-soft">
-          <Loader2 className="h-6 w-6 animate-spin" />
+      {editing ? (
+        <div className="space-y-2">
+          <Input className="h-10" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t("admin.crm.editName")} />
+          <Input className="h-10" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder={t("admin.crm.editCity")} />
+          <Input className="h-10" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t("admin.crm.editEmail")} inputMode="email" />
+          <Input className="h-10" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={t("admin.crm.editAddress")} />
+          <Textarea rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder={t("admin.crm.editNote")} />
+          {error && <p className="text-sm font-semibold text-rose-600">{error}</p>}
+          <div className="flex gap-2">
+            <Button onClick={save} disabled={busy} className="flex-1 gap-1.5 font-semibold">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />} {busy ? t("admin.crm.saving") : t("admin.crm.save")}
+            </Button>
+            <Button variant="outline" onClick={() => setEditing(false)} className="font-semibold">{t("admin.crm.cancel")}</Button>
+          </div>
         </div>
       ) : (
-        <div className="space-y-5 p-5">
-          {/* identity */}
-          <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-100 text-xl font-bold text-brand-700">
-              {detail.name.charAt(0)}
-            </div>
-            <div className="min-w-0">
-              <p className="truncate font-display text-lg font-bold text-ink" dir="auto">{detail.name}</p>
-              <div className="mt-0.5 flex items-center gap-2">
-                <span className="font-mono text-xs text-ink-soft">{shortId(detail.id)}</span>
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-xs font-semibold",
-                    detail.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-600",
-                  )}
-                >
-                  {detail.status === "active" ? t("admin.crm.statusActive") : t("admin.crm.statusInactive")}
-                </span>
-              </div>
+        <>
+          {/* tags */}
+          <div>
+            <p className="mb-2 text-sm font-semibold text-ink">{t("admin.crm.tagsTitle")}</p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {detail.tags.map((tag) => (
+                <Badge key={tag} className="gap-1 bg-muted text-foreground">
+                  {tag}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => removeTag(tag)}
+                    className="h-4 w-4 rounded-full p-0 text-muted-foreground hover:bg-transparent hover:text-rose-600"
+                  >
+                    <X className="h-3 w-3" />
+                    <span className="sr-only">{t("admin.crm.removeTag")}</span>
+                  </Button>
+                </Badge>
+              ))}
+              <Input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addTag(tagInput);
+                  }
+                }}
+                placeholder={t("admin.crm.addTag")}
+                className="h-7 w-32 text-xs"
+              />
             </div>
           </div>
 
-          {editing ? (
-            <div className="space-y-2">
-              <input className={input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t("admin.crm.editName")} />
-              <input className={input} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder={t("admin.crm.editCity")} />
-              <input className={input} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t("admin.crm.editEmail")} inputMode="email" />
-              <input className={input} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={t("admin.crm.editAddress")} />
-              <textarea className={`${input} h-auto py-2`} rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder={t("admin.crm.editNote")} />
-              {error && <p className="text-sm text-rose-600">{error}</p>}
-              <div className="flex gap-2">
-                <button onClick={save} disabled={busy} className="flex flex-1 items-center justify-center gap-2 rounded-full bg-brand-600 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:opacity-60">
-                  {busy && <Loader2 className="h-4 w-4 animate-spin" />} {busy ? t("admin.crm.saving") : t("admin.crm.save")}
-                </button>
-                <button onClick={() => setEditing(false)} className="rounded-full border border-slate-200 px-4 py-2.5 text-sm font-semibold text-ink-soft hover:bg-slate-50">
-                  {t("admin.crm.cancel")}
-                </button>
+          {/* contact */}
+          <div className="space-y-2 text-sm">
+            <a href={`tel:${detail.phone}`} className="flex items-center gap-2 text-ink hover:text-brand-700" dir="ltr">
+              <Phone className="h-4 w-4 text-ink-soft" /> {detail.phone}
+            </a>
+            {detail.email && (
+              <p className="flex items-center gap-2 text-ink" dir="ltr"><Mail className="h-4 w-4 text-ink-soft" /> {detail.email}</p>
+            )}
+            {detail.address && (
+              <p className="flex items-start gap-2 text-ink" dir="auto"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-ink-soft" /> {detail.address}{detail.city ? `, ${detail.city}` : ""}</p>
+            )}
+            <p className="flex items-center gap-2 text-ink-soft"><CalendarDays className="h-4 w-4" /> {t("admin.crm.registeredOn")}: {formatDate(detail.firstOrderAt)}</p>
+            <p className="text-xs text-ink-soft">{t("admin.crm.source")}: {detail.source === "phone" ? t("admin.crm.sourcePhone") : t("admin.crm.sourceWeb")}</p>
+            {(detail.acquisitionSource || detail.whatsappOptIn) && (
+              <p className="flex flex-wrap items-center gap-2 text-xs text-ink-soft">
+                {detail.acquisitionSource && (
+                  <span>{t("admin.crm.channel")}: <span className="font-semibold text-ink">{channelLabel(t, detail.acquisitionSource)}</span></span>
+                )}
+                {detail.whatsappOptIn && <Badge className="bg-emerald-50 text-emerald-700">{t("admin.crm.consentWhatsapp")}</Badge>}
+              </p>
+            )}
+            {detail.contact.callAttempts > 0 && (
+              <p className="flex flex-wrap items-center gap-2 text-ink-soft">
+                <Phone className="h-4 w-4" /> {t("admin.crm.calls", { n: detail.contact.callAttempts })}
+                {detail.contact.lastOutcome && (
+                  <Badge className="bg-muted text-ink-soft">{outcomeLabel(t, detail.contact.lastOutcome)}</Badge>
+                )}
+              </p>
+            )}
+          </div>
+
+          {/* stats */}
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl bg-muted/50 p-3">
+              <p className="font-display text-lg font-bold text-ink">{detail.orderCount}</p>
+              <p className="text-[11px] text-ink-soft">{t("admin.crm.statOrders")}</p>
+            </div>
+            <div className="rounded-xl bg-muted/50 p-3">
+              <p className="font-display text-sm font-bold text-ink">{formatMAD(detail.totalSpent)}</p>
+              <p className="text-[11px] text-ink-soft">{t("admin.crm.statSpent")}</p>
+            </div>
+            <div className="rounded-xl bg-muted/50 p-3">
+              <p className="font-display text-sm font-bold text-ink">{formatMAD(detail.avgBasket)}</p>
+              <p className="text-[11px] text-ink-soft">{t("admin.crm.statBasket")}</p>
+            </div>
+          </div>
+
+          {/* installed devices (parc) */}
+          {detail.devices.length > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-semibold text-ink">{t("admin.crm.devicesTitle")}</p>
+              <div className="space-y-2">
+                {detail.devices.map((d) => (
+                  <div key={d.id} className="rounded-xl border border-border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2 font-semibold text-ink" dir="auto">
+                        <PackageCheck className="h-4 w-4 shrink-0 text-brand-500" /> {d.model}
+                      </span>
+                      {d.due && <Badge className="bg-amber-100 text-amber-700">{t("admin.crm.seg.due")}</Badge>}
+                    </div>
+                    <div className="mt-1.5 grid grid-cols-1 gap-0.5 text-xs text-ink-soft sm:grid-cols-3">
+                      <span>{t("admin.crm.installedOn")}: {d.installedAt ? formatDate(d.installedAt) : "—"}</span>
+                      <span>{t("admin.crm.nextMaint")}: {d.nextMaintenanceAt ? formatDate(d.nextMaintenanceAt) : "—"}</span>
+                      <span>{t("admin.crm.warranty")}: {d.warrantyUntil ? formatDate(d.warrantyUntil) : "—"}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          ) : (
-            <>
-              {/* contact */}
-              <div className="space-y-2 text-sm">
-                <a href={`tel:${detail.phone}`} className="flex items-center gap-2 text-ink hover:text-brand-700" dir="ltr">
-                  <Phone className="h-4 w-4 text-ink-soft" /> {detail.phone}
-                </a>
-                {detail.email && (
-                  <p className="flex items-center gap-2 text-ink" dir="ltr">
-                    <Mail className="h-4 w-4 text-ink-soft" /> {detail.email}
-                  </p>
-                )}
-                {detail.address && (
-                  <p className="flex items-start gap-2 text-ink" dir="auto">
-                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-ink-soft" /> {detail.address}{detail.city ? `, ${detail.city}` : ""}
-                  </p>
-                )}
-                <p className="flex items-center gap-2 text-ink-soft">
-                  <CalendarDays className="h-4 w-4" /> {t("admin.crm.registeredOn")}: {formatDate(detail.firstOrderAt)}
-                </p>
-                <p className="text-xs text-ink-soft">
-                  {t("admin.crm.source")}: {detail.source === "phone" ? t("admin.crm.sourcePhone") : t("admin.crm.sourceWeb")}
-                </p>
-              </div>
-
-              {/* stats */}
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="font-display text-lg font-bold text-ink">{detail.orderCount}</p>
-                  <p className="text-[11px] text-ink-soft">{t("admin.crm.statOrders")}</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="font-display text-sm font-bold text-ink">{formatMAD(detail.totalSpent)}</p>
-                  <p className="text-[11px] text-ink-soft">{t("admin.crm.statSpent")}</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 p-3">
-                  <p className="font-display text-sm font-bold text-ink">{formatMAD(detail.avgBasket)}</p>
-                  <p className="text-[11px] text-ink-soft">{t("admin.crm.statBasket")}</p>
-                </div>
-              </div>
-
-              {/* recent orders */}
-              <div>
-                <p className="mb-2 text-sm font-semibold text-ink">{t("admin.crm.recentOrders")}</p>
-                {detail.orders.length === 0 ? (
-                  <p className="text-sm text-ink-soft">{t("admin.crm.noOrders")}</p>
-                ) : (
-                  <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
-                    {detail.orders.map((o) => (
-                      <Link
-                        key={o.id}
-                        href={`/admin/orders/${o.id}`}
-                        className="flex items-center justify-between gap-2 px-3 py-2 text-sm transition hover:bg-slate-50"
-                      >
-                        <span className="font-semibold text-brand-700">{o.id}</span>
-                        <span className="text-ink-soft">{formatDate(o.createdAt)}</span>
-                        <span className="font-medium text-ink">{formatMAD(o.total)}</span>
-                        <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", (STATUS_META as Record<string, { className: string }>)[o.status]?.className ?? "bg-slate-100 text-ink-soft")}>
-                          {t(`status.${o.status}`)}
-                        </span>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {detail.note && (
-                <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
-                  <span className="font-semibold">{t("admin.crm.note")}: </span>
-                  <span dir="auto">{detail.note}</span>
-                </div>
-              )}
-
-              {/* actions */}
-              <div className="grid grid-cols-2 gap-2 pt-2">
-                <a href={`https://wa.me/${waNumber(detail.phone)}`} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1.5 rounded-full bg-[#25D366] py-2.5 text-sm font-semibold text-white transition hover:brightness-105">
-                  <MessageCircle className="h-4 w-4" /> WhatsApp
-                </a>
-                <a href={`tel:${detail.phone}`} className="flex items-center justify-center gap-1.5 rounded-full border border-slate-200 py-2.5 text-sm font-semibold text-ink transition hover:bg-slate-50">
-                  <Phone className="h-4 w-4" /> {t("admin.crm.actCall")}
-                </a>
-                <button onClick={startEdit} className="flex items-center justify-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 py-2.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-100">
-                  <Pencil className="h-4 w-4" /> {t("admin.crm.actEdit")}
-                </button>
-                <button onClick={toggleStatus} disabled={busy} className={cn("flex items-center justify-center gap-1.5 rounded-full py-2.5 text-sm font-semibold transition disabled:opacity-60", detail.status === "active" ? "border border-rose-200 bg-white text-rose-600 hover:bg-rose-50" : "border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50")}>
-                  <Power className="h-4 w-4" /> {detail.status === "active" ? t("admin.crm.actDeactivate") : t("admin.crm.actActivate")}
-                </button>
-              </div>
-            </>
           )}
-        </div>
+
+          {/* actions */}
+          <div className="grid grid-cols-2 gap-2">
+            <a href={`https://wa.me/${waNumber(detail.phone)}`} target="_blank" rel="noopener noreferrer" className={cn(buttonVariants({ variant: "whatsapp", size: "sm" }), "w-full")}>
+              <MessageCircle className="h-4 w-4" /> WhatsApp
+            </a>
+            <a href={`tel:${detail.phone}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}>
+              <Phone className="h-4 w-4" /> {t("admin.crm.actCall")}
+            </a>
+            <Button variant="outline" size="sm" onClick={startEdit} className="border-brand-200 bg-brand-50 font-semibold text-brand-700 hover:bg-brand-100">
+              <Pencil className="h-4 w-4" /> {t("admin.crm.actEdit")}
+            </Button>
+            <Button variant="outline" size="sm" onClick={toggleStatus} disabled={busy} className={cn("font-semibold", detail.status === "active" ? "border-rose-200 bg-card text-rose-600 hover:bg-rose-50" : "border-emerald-200 bg-card text-emerald-700 hover:bg-emerald-50")}>
+              <Power className="h-4 w-4" /> {detail.status === "active" ? t("admin.crm.actDeactivate") : t("admin.crm.actActivate")}
+            </Button>
+          </div>
+
+          {detail.note && (
+            <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+              <span className="font-semibold">{t("admin.crm.note")}: </span>
+              <span dir="auto">{detail.note}</span>
+            </div>
+          )}
+
+          {/* add note */}
+          <div>
+            <p className="mb-2 text-sm font-semibold text-ink">{t("admin.crm.notesTitle")}</p>
+            <div className="flex items-start gap-2">
+              <Textarea
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                rows={2}
+                placeholder={t("admin.crm.addNote")}
+                className="flex-1"
+              />
+              <Button onClick={submitNote} disabled={savingNote || !noteText.trim()} size="sm" className="font-semibold">
+                {savingNote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              </Button>
+            </div>
+          </div>
+
+          {/* unified activity timeline */}
+          <div>
+            <p className="mb-2 text-sm font-semibold text-ink">{t("admin.crm.timeline")}</p>
+            {detail.timeline.length === 0 ? (
+              <p className="text-sm text-ink-soft">{t("admin.crm.noOrders")}</p>
+            ) : (
+              <ol className="space-y-3">
+                {detail.timeline.map((e) => {
+                  const m = EVT_META[e.type];
+                  const Icon = m.icon;
+                  const inner = (
+                    <>
+                      <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full", m.tone)}>
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-ink">{t(m.labelKey)}</span>
+                          {e.amount != null && <span className="font-semibold text-ink">{formatMAD(e.amount)}</span>}
+                        </span>
+                        <span className="flex items-center justify-between gap-2 text-xs text-ink-soft">
+                          <span className="truncate">{e.title}</span>
+                          <span className="shrink-0">{formatDate(e.date)}</span>
+                        </span>
+                      </span>
+                    </>
+                  );
+                  return e.href ? (
+                    <li key={`${e.type}-${e.id}`}>
+                      <Link href={e.href} className="flex items-center gap-3 rounded-xl border border-border p-2.5 transition hover:bg-muted/50">{inner}</Link>
+                    </li>
+                  ) : (
+                    <li key={`${e.type}-${e.id}`} className="flex items-center gap-3 rounded-xl border border-border p-2.5">{inner}</li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
@@ -515,65 +777,87 @@ function ClientDetailPanel({
 
 function CityDonut({ segments }: { segments: ClientSegments }) {
   const { t } = useI18n();
-  const data = segments.byCity;
-  const total = data.reduce((s, d) => s + d.count, 0);
-  const R = 48;
-  const C = 2 * Math.PI * R;
-  let offset = 0;
+  const data = segments.byCity.map((d, i) => ({
+    key: d.city,
+    label: d.city === "__other__" ? t("admin.crm.otherCity") : d.city,
+    value: d.count,
+    fill: CITY_COLORS[i % CITY_COLORS.length],
+  }));
+  const total = data.reduce((s, d) => s + d.value, 0);
+  const config = Object.fromEntries(data.map((d) => [d.key, { label: d.label, color: d.fill }])) satisfies ChartConfig;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <Card className="gap-0 p-5">
       <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-soft">{t("admin.crm.cityTitle")}</p>
       {total === 0 ? (
         <p className="py-10 text-center text-sm text-ink-soft">—</p>
       ) : (
         <div className="flex items-center gap-5">
-          <svg viewBox="0 0 120 120" className="h-32 w-32 shrink-0">
-            <circle cx="60" cy="60" r={R} fill="none" stroke="#f1f5f9" strokeWidth="14" />
-            {data.map((d, i) => {
-              const frac = d.count / total;
-              const len = frac * C;
-              const el = (
-                <circle
-                  key={i}
-                  cx="60"
-                  cy="60"
-                  r={R}
-                  fill="none"
-                  stroke={CITY_COLORS[i % CITY_COLORS.length]}
-                  strokeWidth="14"
-                  strokeDasharray={`${len} ${C - len}`}
-                  strokeDashoffset={-offset}
-                  transform="rotate(-90 60 60)"
+          <ChartContainer config={config} className="aspect-square h-32 w-32 shrink-0">
+            <PieChart>
+              <Pie data={data} dataKey="value" nameKey="key" innerRadius={40} outerRadius={58} strokeWidth={2}>
+                {data.map((d) => (
+                  <Cell key={d.key} fill={d.fill} />
+                ))}
+                <ChartLabel
+                  content={({ viewBox }) => {
+                    if (viewBox && "cx" in viewBox && viewBox.cx != null && viewBox.cy != null) {
+                      return (
+                        <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
+                          <tspan x={viewBox.cx} y={viewBox.cy} className="fill-ink font-extrabold" fontSize="20">{total}</tspan>
+                          <tspan x={viewBox.cx} y={(viewBox.cy as number) + 16} className="fill-slate-400 font-semibold" fontSize="9">{t("admin.crm.clientsWord")}</tspan>
+                        </text>
+                      );
+                    }
+                    return null;
+                  }}
                 />
-              );
-              offset += len;
-              return el;
-            })}
-            <text x="60" y="56" textAnchor="middle" className="fill-ink font-bold" fontSize="20">{total}</text>
-            <text x="60" y="72" textAnchor="middle" className="fill-slate-400" fontSize="9">{t("admin.crm.clientsWord")}</text>
-          </svg>
+              </Pie>
+            </PieChart>
+          </ChartContainer>
           <ul className="flex-1 space-y-1.5 text-sm">
-            {data.map((d, i) => (
-              <li key={i} className="flex items-center justify-between gap-2">
+            {data.map((d) => (
+              <li key={d.key} className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-2 text-ink" dir="auto">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: CITY_COLORS[i % CITY_COLORS.length] }} />
-                  {d.city === "__other__" ? t("admin.crm.otherCity") : d.city}
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: d.fill }} />
+                  {d.label}
                 </span>
-                <span className="text-ink-soft">{Math.round((d.count / total) * 100)}% ({d.count})</span>
+                <span className="font-semibold text-ink-soft">{Math.round((d.value / total) * 100)}% ({d.value})</span>
               </li>
             ))}
           </ul>
         </div>
       )}
-    </div>
+    </Card>
+  );
+}
+
+function Channels({ segments }: { segments: ClientSegments }) {
+  const { t } = useI18n();
+  const total = segments.byChannel.reduce((s, d) => s + d.count, 0);
+  return (
+    <Card className="gap-0 p-5">
+      <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-soft">{t("admin.crm.channelsTitle")}</p>
+      {segments.byChannel.length === 0 ? (
+        <p className="py-10 text-center text-sm text-ink-soft">—</p>
+      ) : (
+        <ul className="space-y-2 text-sm">
+          {segments.byChannel.map((d) => (
+            <li key={d.channel} className="flex items-center justify-between gap-2">
+              <span className="text-ink">{channelLabel(t, d.channel)}</span>
+              <span className="font-semibold text-ink-soft">{total ? Math.round((d.count / total) * 100) : 0}% ({d.count})</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 
 function TopSpenders({ segments }: { segments: ClientSegments }) {
   const { t } = useI18n();
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <Card className="gap-0 p-5">
       <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-soft">{t("admin.crm.topTitle")}</p>
       {segments.topSpenders.length === 0 ? (
         <p className="py-10 text-center text-sm text-ink-soft">—</p>
@@ -582,20 +866,20 @@ function TopSpenders({ segments }: { segments: ClientSegments }) {
           {segments.topSpenders.map((c, i) => (
             <li key={c.phone} className="flex items-center gap-3">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">{i + 1}</span>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink" dir="auto">{c.name}</span>
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink" dir="auto">{c.name}</span>
               <span className="text-sm font-semibold text-ink">{formatMAD(c.spent)}</span>
             </li>
           ))}
         </ol>
       )}
-    </div>
+    </Card>
   );
 }
 
 function NewClients({ segments }: { segments: ClientSegments }) {
   const { t } = useI18n();
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <Card className="gap-0 p-5">
       <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-soft">{t("admin.crm.newTitle")}</p>
       {segments.newClients.length === 0 ? (
         <p className="py-10 text-center text-sm text-ink-soft">—</p>
@@ -603,12 +887,12 @@ function NewClients({ segments }: { segments: ClientSegments }) {
         <ul className="space-y-3">
           {segments.newClients.map((c) => (
             <li key={c.phone} className="flex items-center justify-between gap-2 text-sm">
-              <span className="min-w-0 flex-1 truncate font-medium text-ink" dir="auto">{c.name}</span>
+              <span className="min-w-0 flex-1 truncate font-semibold text-ink" dir="auto">{c.name}</span>
               <span className="text-ink-soft">{formatDate(c.firstOrderAt)}</span>
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   );
 }

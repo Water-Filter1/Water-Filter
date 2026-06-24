@@ -1,18 +1,15 @@
 import type { Metadata } from "next";
-import { Inter, Poppins } from "next/font/google";
+import { Roboto } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/context/cart-context";
 
-const inter = Inter({
+// Classic Roboto (fixed weights) — used for both body and headings across the site.
+// Static weights keep strokes consistent + readable at small sizes (unlike Roboto Flex,
+// whose optical-size axis thins out small text).
+const roboto = Roboto({
   subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
-const poppins = Poppins({
-  subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
-  variable: "--font-poppins",
+  weight: ["400", "500", "700", "900"],
+  variable: "--font-roboto",
   display: "swap",
 });
 
@@ -31,7 +28,7 @@ export default function RootLayout({
   return (
     <html
       lang="fr"
-      className={`${inter.variable} ${poppins.variable} h-full`}
+      className={`${roboto.variable} h-full`}
     >
       <body
         suppressHydrationWarning

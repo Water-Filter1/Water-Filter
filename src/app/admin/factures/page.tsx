@@ -9,7 +9,7 @@ export default async function FacturesPage() {
   const [invoices, invoiceable] = await Promise.all([getInvoices(), getInvoiceableOrders(12)]);
 
   return (
-    <div>
+    <div className="font-semibold">
       <div className="mb-6">
         <h1 className="font-display text-2xl font-bold text-ink">{t("admin.factures.title")}</h1>
         <p className="text-sm text-ink-soft">{t("admin.factures.subtitle")}</p>

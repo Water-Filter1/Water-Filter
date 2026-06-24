@@ -5,6 +5,7 @@ import { Search, Inbox, AlertTriangle, CalendarCheck } from "lucide-react";
 import { ConfirmOrderCard } from "./confirm-order-card";
 import { ConfirmedOrderCard } from "./confirmed-order-card";
 import { PhoneOrderForm } from "./phone-order-form";
+import { Input } from "@/components/ui/input";
 import type { Order } from "@/lib/types";
 import { useI18n } from "@/i18n/i18n-context";
 
@@ -51,7 +52,7 @@ export function ConfirmationBoard({
 
       <div className="relative">
         <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft" />
-        <input
+        <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={t("conf.board.searchPlaceholder")}

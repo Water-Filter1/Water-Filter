@@ -48,6 +48,7 @@ export type Product = {
   shortDescription: string;
   description: string;
   price: number;
+  cost?: number;
   oldPrice?: number;
   rating: number; // 0..5
   reviewCount: number;
