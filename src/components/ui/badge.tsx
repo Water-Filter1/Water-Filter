@@ -32,10 +32,13 @@ export function Badge({
   children,
   tone,
   className,
-}: {
-  children: React.ReactNode;
+  ...props
+}: React.ComponentProps<"span"> & {
   tone?: Tone;
-  className?: string;
 }) {
-  return <span className={cn(badgeVariants({ tone }), className)}>{children}</span>;
+  return (
+    <span className={cn(badgeVariants({ tone }), className)} {...props}>
+      {children}
+    </span>
+  );
 }

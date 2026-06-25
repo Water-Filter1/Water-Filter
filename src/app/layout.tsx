@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Roboto } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/context/cart-context";
+import { Toaster } from "@/components/ui/sonner";
 
 // Classic Roboto (fixed weights) — used for both body and headings across the site.
 // Static weights keep strokes consistent + readable at small sizes (unlike Roboto Flex,
@@ -35,6 +36,7 @@ export default function RootLayout({
         className="flex min-h-screen flex-col bg-white text-ink antialiased"
       >
         <CartProvider>{children}</CartProvider>
+        <Toaster richColors position="top-right" />
       </body>
     </html>
   );

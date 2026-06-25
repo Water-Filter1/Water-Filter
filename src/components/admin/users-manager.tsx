@@ -9,6 +9,7 @@ import {
   updateStaffUserAction,
 } from "@/lib/users-actions";
 import type { StaffUser } from "@/lib/data";
+import { toast } from "sonner";
 import { useI18n } from "@/i18n/i18n-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,9 +52,11 @@ export function UsersManager({ users, currentUserId }: { users: StaffUser[]; cur
       if (res.ok) {
         setOkMsg(t("admin.usersManager.accountCreated"));
         setForm({ email: "", name: "", password: "", role: "confirmateur", city: "" });
+        toast.success(t("admin.toast.created"));
         router.refresh();
       } else {
         setError(res.error ?? t("admin.usersManager.error"));
+        toast.error(t("admin.toast.error"));
       }
     });
   }
@@ -65,8 +68,13 @@ export function UsersManager({ users, currentUserId }: { users: StaffUser[]; cur
     const id = deleteTarget.id;
     startTransition(async () => {
       const res = await deleteStaffUserAction(id);
-      if (!res.ok) setError(res.error ?? t("admin.usersManager.error"));
-      else router.refresh();
+      if (!res.ok) {
+        setError(res.error ?? t("admin.usersManager.error"));
+        toast.error(t("admin.toast.error"));
+      } else {
+        toast.success(t("admin.toast.deleted"));
+        router.refresh();
+      }
       setDeleteTarget(null);
     });
   }
@@ -89,9 +97,11 @@ export function UsersManager({ users, currentUserId }: { users: StaffUser[]; cur
       const res = await updateStaffUserAction(editing.id, eForm);
       if (res.ok) {
         setEditing(null);
+        toast.success(t("admin.toast.saved"));
         router.refresh();
       } else {
         setEError(res.error ?? t("admin.usersManager.error"));
+        toast.error(t("admin.toast.error"));
       }
     });
   }

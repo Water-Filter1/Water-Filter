@@ -6,7 +6,9 @@ import { Camera, Check, Receipt, MessageCircle } from "lucide-react";
 import { completeInstallationAction } from "@/lib/order-actions";
 import { waNumber } from "@/lib/utils";
 import { useI18n } from "@/i18n/i18n-context";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export function CompleteJobForm({
   orderId,
@@ -57,7 +59,7 @@ export function CompleteJobForm({
               href={`https://wa.me/${waNumber(phone)}?text=${encodeURIComponent(waText)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 rounded-full bg-[#25D366] py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
+              className={buttonVariants({ variant: "whatsapp", size: "sm", className: "w-full font-semibold" })}
             >
               <MessageCircle className="h-4 w-4" /> {t("tech.complete.sendInvoice")}
             </a>
@@ -65,7 +67,7 @@ export function CompleteJobForm({
               href={done.invoiceUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 rounded-full border border-slate-200 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50"
+              className={buttonVariants({ variant: "outline", size: "sm", className: "w-full font-semibold" })}
             >
               <Receipt className="h-4 w-4" /> {t("tech.complete.viewInvoice")}
             </a>
@@ -80,19 +82,19 @@ export function CompleteJobForm({
 
   return (
     <form onSubmit={submit} className="mt-4 border-t border-slate-100 pt-3">
-      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-medium text-ink-soft transition hover:border-brand-300 hover:text-brand-600">
+      <Label className="cursor-pointer justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-ink-soft transition hover:border-brand-300 hover:text-brand-600">
         <Camera className="h-5 w-5" />
         {file ? t("tech.complete.changePhoto") : t("tech.complete.installationPhoto")}
-        <input
+        <Input
           type="file"
           accept="image/*"
           capture="environment"
           className="hidden"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
-      </label>
-      {file && <p className="mt-1 truncate text-xs text-emerald-600">✓ {file.name}</p>}
-      {error && <p className="mt-1 text-sm text-rose-600">{error}</p>}
+      </Label>
+      {file && <p className="mt-1 truncate text-xs font-semibold text-emerald-600">✓ {file.name}</p>}
+      {error && <p className="mt-1 text-sm font-semibold text-rose-600">{error}</p>}
       <Button
         type="submit"
         disabled={pending}

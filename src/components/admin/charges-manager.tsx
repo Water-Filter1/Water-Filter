@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Banknote, TrendingUp, Wallet, Hourglass, Plus, Loader2, Trash2, Users } from "lucide-react";
 import { useI18n } from "@/i18n/i18n-context";
 import { formatMAD, formatDate, cn } from "@/lib/utils";
@@ -106,15 +107,22 @@ export function ChargesManager({ pnl, expenses }: { pnl: FinancePnL; expenses: E
     setBusy(false);
     if (res.ok) {
       setForm({ label: "", amount: "", category: "stock", date: "", note: "" });
+      toast.success(t("admin.toast.created"));
       router.refresh();
     } else {
+      toast.error(t("admin.toast.error"));
       setError(t("admin.charges.error"));
     }
   }
 
   async function remove(id: string) {
     setDelId(id);
-    await deleteExpenseAction(id);
+    const res = await deleteExpenseAction(id);
+    if (res && res.ok === false) {
+      toast.error(t("admin.toast.error"));
+    } else {
+      toast.success(t("admin.toast.deleted"));
+    }
     router.refresh();
     setDelId(null);
   }
@@ -127,7 +135,12 @@ export function ChargesManager({ pnl, expenses }: { pnl: FinancePnL; expenses: E
     setConfBusy(true);
     const res = await setConfirmateurMonthlyAction(confNum);
     setConfBusy(false);
-    if (res.ok) router.refresh();
+    if (res.ok) {
+      toast.success(t("admin.toast.saved"));
+      router.refresh();
+    } else {
+      toast.error(t("admin.toast.error"));
+    }
   }
 
   const kpis = [

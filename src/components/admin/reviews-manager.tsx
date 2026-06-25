@@ -4,6 +4,7 @@ import { useTransition, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Star, Check, X, MessageSquare } from "lucide-react";
 import { approveReviewAction, rejectReviewAction } from "@/lib/review-actions";
+import { toast } from "sonner";
 import { useI18n } from "@/i18n/i18n-context";
 import { formatDate, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -41,9 +42,15 @@ export function ReviewsManager({
   function act(id: string, fn: (id: string) => Promise<void>) {
     setBusy(id);
     startTransition(async () => {
-      await fn(id);
-      router.refresh();
-      setBusy(null);
+      try {
+        await fn(id);
+        toast.success(t("admin.toast.saved"));
+        router.refresh();
+      } catch {
+        toast.error(t("admin.toast.error"));
+      } finally {
+        setBusy(null);
+      }
     });
   }
 

@@ -12,6 +12,7 @@ import {
   PhoneOff,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { confirmOrderAction, recordCallOutcomeAction, logWhatsappAction } from "@/lib/order-actions";
 import { formatMAD, formatDate, waNumber } from "@/lib/utils";
 import type { Order } from "@/lib/types";
@@ -66,8 +67,13 @@ export function ConfirmOrderCard({
         note: note.trim() || undefined,
         assignedTo: assignedTo || undefined,
       });
-      if (res.ok) router.refresh();
-      else setError(res.error ?? t("conf.card.errGeneric"));
+      if (res.ok) {
+        toast.success(t("admin.toast.saved"));
+        router.refresh();
+      } else {
+        toast.error(t("admin.toast.error"));
+        setError(res.error ?? t("conf.card.errGeneric"));
+      }
     });
   }
 
@@ -75,8 +81,13 @@ export function ConfirmOrderCard({
     setError(null);
     startTransition(async () => {
       const res = await recordCallOutcomeAction(order.id, o);
-      if (res.ok) router.refresh();
-      else setError(res.error ?? t("conf.card.errGeneric"));
+      if (res.ok) {
+        toast.success(t("admin.toast.saved"));
+        router.refresh();
+      } else {
+        toast.error(t("admin.toast.error"));
+        setError(res.error ?? t("conf.card.errGeneric"));
+      }
     });
   }
 

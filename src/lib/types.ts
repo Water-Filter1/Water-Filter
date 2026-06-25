@@ -111,6 +111,8 @@ export type Order = {
   assignedTo?: string; // plombier email
   completedAt?: string; // ISO — when the plombier marked it installed
   photoUrl?: string; // completion photo
+  invoiceRef?: string; // facture display ref (FAC-NNNNN), if one has been issued for this order
+  invoiceUrl?: string; // absolute link to the public facture page, for re-sending to the client
   installStage?: "enroute" | "arrived"; // plombier progress (null = scheduled)
   kind: "install" | "maintenance";
   parentOrderId?: string; // for a maintenance visit, the original installation

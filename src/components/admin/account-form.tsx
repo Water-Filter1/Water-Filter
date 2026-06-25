@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
+import { toast } from "sonner";
 import { Check, ShieldCheck } from "lucide-react";
 import { updateAdminAccountAction, type AccountState } from "@/lib/account-actions";
 import { useI18n } from "@/i18n/i18n-context";
@@ -20,6 +21,14 @@ const input =
 export function AdminAccountForm({ currentEmail }: { currentEmail: string }) {
   const [state, action, pending] = useActionState(updateAdminAccountAction, initial);
   const { t } = useI18n();
+
+  useEffect(() => {
+    if (state.ok) toast.success(t("admin.toast.saved"));
+  }, [state.ok, t]);
+
+  useEffect(() => {
+    if (state.error) toast.error(t("admin.toast.error"));
+  }, [state.error, t]);
 
   return (
     <Card className="gap-0 py-0 rounded-2xl ring-0 border border-line bg-card p-6 shadow-sm">

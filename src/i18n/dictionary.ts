@@ -284,6 +284,11 @@ export const DICT: Record<string, Record<Locale, string>> = {
   // ---- dashboard chrome (admin / confirmation / technicien) ----
   "dash.logout": { fr: "Déconnexion", ar: "تسجيل الخروج", en: "Log out" },
   "dash.viewSite": { fr: "Voir le site", ar: "عرض الموقع", en: "View site" },
+  "admin.toast.created": { fr: "Créé ✓", ar: "تم الإنشاء ✓", en: "Created ✓" },
+  "admin.toast.updated": { fr: "Mis à jour ✓", ar: "تم التحديث ✓", en: "Updated ✓" },
+  "admin.toast.saved": { fr: "Enregistré ✓", ar: "تم الحفظ ✓", en: "Saved ✓" },
+  "admin.toast.deleted": { fr: "Supprimé", ar: "تم الحذف", en: "Deleted" },
+  "admin.toast.error": { fr: "Une erreur s'est produite", ar: "حدث خطأ", en: "Something went wrong" },
   "dash.menu": { fr: "Menu", ar: "القائمة", en: "Menu" },
   "dash.notifications": { fr: "Notifications", ar: "الإشعارات", en: "Notifications" },
   "dash.noNotifications": { fr: "Aucune notification 🎉", ar: "لا توجد إشعارات 🎉", en: "No notifications 🎉" },
@@ -360,6 +365,13 @@ export const DICT: Record<string, Record<Locale, string>> = {
   "tech.title": { fr: "Mes installations", ar: "تركيباتي", en: "My installations" },
   "tech.empty.title": { fr: "Aucune installation pour le moment", ar: "لا توجد تركيبات حالياً", en: "No installations yet" },
   "tech.empty.subtitle": { fr: "Vous serez notifié dès qu'une installation vous est assignée.", ar: "سيتم إشعارك فور إسناد تركيب إليك.", en: "You'll be notified as soon as an installation is assigned to you." },
+  "tech.tabActive": { fr: "À faire", ar: "قيد التنفيذ", en: "Active" },
+  "tech.tabDone": { fr: "Terminées", ar: "منتهية", en: "Completed" },
+  "tech.doneEmpty": { fr: "Aucune installation terminée pour le moment.", ar: "لا توجد تركيبات منتهية بعد.", en: "No completed installations yet." },
+  "tech.installedBadge": { fr: "Installé", ar: "مُركَّب", en: "Installed" },
+  "tech.installedOn": { fr: "Installé le", ar: "رُكِّب في", en: "Installed on" },
+  "tech.genInvoice": { fr: "Générer la facture", ar: "إنشاء الفاتورة", en: "Generate invoice" },
+  "tech.genInvoice.pending": { fr: "Génération…", ar: "جارٍ الإنشاء…", en: "Generating…" },
 
   // ---- confirmation board ----
   "conf.board.noTechnicianWarning": { fr: "Aucun technicien configuré. Les commandes seront confirmées mais pas assignées — demandez à l'administrateur de créer un compte technicien.", ar: "لم يتم إعداد أي فني. سيتم تأكيد الطلبات دون إسنادها — اطلب من المدير إنشاء حساب فني.", en: "No technician configured. Orders will be confirmed but not assigned — ask the administrator to create a technician account." },

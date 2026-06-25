@@ -14,7 +14,10 @@ import {
 } from "lucide-react";
 import { setJobStageAction } from "@/lib/order-actions";
 import { CompleteJobForm } from "./complete-job-form";
-import { formatMAD, waNumber, formatDateTime } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { formatMAD, waNumber, formatDateTime, cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/i18n-context";
 import type { Order } from "@/lib/types";
 
@@ -44,16 +47,16 @@ export function PlombierJobCard({ order }: { order: Order }) {
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <Card className="gap-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ring-0">
       {/* date + type/price */}
       <div className="flex items-center justify-between gap-3">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700">
+        <Badge className="gap-1.5 px-3 py-1.5 text-sm font-semibold bg-brand-50 text-brand-700">
           <CalendarClock className="h-4 w-4" /> {formatWhen(order.installDate, t)}
-        </span>
+        </Badge>
         {order.kind === "maintenance" ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700">
+          <Badge className="gap-1.5 px-3 py-1 text-xs font-bold bg-orange-100 text-orange-700">
             <Wrench className="h-3.5 w-3.5" /> {t("tech.job.maintenance")}
-          </span>
+          </Badge>
         ) : (
           <span className="font-display text-lg font-extrabold text-brand-700">{formatMAD(order.total)}</span>
         )}
@@ -68,17 +71,17 @@ export function PlombierJobCard({ order }: { order: Order }) {
         <p className="mb-1 text-xs font-medium text-ink-soft">{t("tech.job.products")}</p>
         <div className="flex flex-wrap gap-1.5">
           {order.items.map((it, i) => (
-            <span key={i} className="rounded-lg bg-slate-50 px-2 py-1 text-xs text-ink" dir="auto">
+            <Badge key={i} className="rounded-lg px-2 py-1 text-xs font-semibold bg-slate-50 text-ink" dir="auto">
               {it.name} ×{it.qty}
-            </span>
+            </Badge>
           ))}
         </div>
       </div>
 
       {order.confirmationNote && (
-        <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs italic text-ink-soft" dir="auto">
+        <Badge className="mt-3 rounded-xl px-3 py-2 text-xs font-semibold italic bg-slate-50 text-ink-soft" dir="auto">
           “{order.confirmationNote}”
-        </p>
+        </Badge>
       )}
 
       {/* actions */}
@@ -87,13 +90,13 @@ export function PlombierJobCard({ order }: { order: Order }) {
           href={mapsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center justify-center gap-1.5 rounded-full bg-brand-600 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700"
+          className={cn(buttonVariants({ variant: "primary", size: "sm" }), "h-auto w-full gap-1.5 px-0 py-2.5 font-semibold")}
         >
           <Navigation className="h-4 w-4" /> {t("tech.job.navigate")}
         </a>
         <a
           href={`tel:${tel}`}
-          className="flex items-center justify-center gap-1.5 rounded-full border border-slate-200 py-2.5 text-sm font-semibold text-ink transition hover:bg-slate-50"
+          className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-auto w-full gap-1.5 px-0 py-2.5 font-semibold")}
         >
           <Phone className="h-4 w-4" /> {t("tech.job.call")}
         </a>
@@ -101,7 +104,7 @@ export function PlombierJobCard({ order }: { order: Order }) {
           href={`https://wa.me/${waNumber(order.phone)}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center justify-center gap-1.5 rounded-full bg-[#25D366] py-2.5 text-sm font-semibold text-white transition hover:brightness-105"
+          className={cn(buttonVariants({ variant: "whatsapp", size: "sm" }), "h-auto w-full gap-1.5 px-0 py-2.5 font-semibold")}
         >
           <MessageCircle className="h-4 w-4" /> WhatsApp
         </a>
@@ -140,18 +143,20 @@ export function PlombierJobCard({ order }: { order: Order }) {
 
       {/* advance buttons */}
       {reached < 2 && (
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => advance(reached === 0 ? "enroute" : "arrived")}
           disabled={pending}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-brand-200 bg-brand-50 py-2.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-100 disabled:opacity-60"
+          className="mt-4 h-auto w-full gap-2 border-brand-200 bg-brand-50 py-2.5 text-sm font-semibold text-brand-700 hover:bg-brand-100"
         >
           <Truck className="h-4 w-4" />
           {pending ? "…" : reached === 0 ? t("tech.job.imEnroute") : t("tech.job.imArrived")}
-        </button>
+        </Button>
       )}
 
       {/* finish: photo + mark installed + send invoice */}
       <CompleteJobForm orderId={order.id} phone={order.phone} customerName={order.customerName} />
-    </div>
+    </Card>
   );
 }

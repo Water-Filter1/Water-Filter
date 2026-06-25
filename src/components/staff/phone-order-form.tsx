@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, PhoneCall, X } from "lucide-react";
+import { toast } from "sonner";
 import { createPhoneOrderAction } from "@/lib/order-actions";
 import { formatMAD } from "@/lib/utils";
 import { useI18n } from "@/i18n/i18n-context";
@@ -49,8 +50,10 @@ export function PhoneOrderForm({ products }: { products: PickItem[] }) {
         setOkMsg(t("conf.phone.orderCreated", { id: res.id ?? "" }));
         setForm({ customerName: "", phone: "", city: "", address: "", note: "" });
         setRows([{ productId: products[0]?.id ?? "", qty: 1 }]);
+        toast.success(t("admin.toast.created"));
         router.refresh();
       } else {
+        toast.error(t("admin.toast.error"));
         setError(res.error ?? t("conf.phone.errorGeneric"));
       }
     });

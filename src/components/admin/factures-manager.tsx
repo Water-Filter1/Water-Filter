@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Receipt, Loader2, FileText, Inbox, Eye } from "lucide-react";
+import { toast } from "sonner";
 import { generateInvoiceAction } from "@/lib/invoice-actions";
 import { useI18n } from "@/i18n/i18n-context";
 import { formatMAD, formatDate } from "@/lib/utils";
@@ -51,9 +52,15 @@ export function FacturesManager({
     setBusyId(orderId);
     try {
       const res = await generateInvoiceAction(orderId);
-      if (res.ok) router.push(`/admin/factures/${res.id}`);
-      else setError(t("admin.factures.genError"));
+      if (res.ok) {
+        toast.success(t("admin.toast.created"));
+        router.push(`/admin/factures/${res.id}`);
+      } else {
+        toast.error(t("admin.toast.error"));
+        setError(t("admin.factures.genError"));
+      }
     } catch {
+      toast.error(t("admin.toast.error"));
       setError(t("admin.factures.genError"));
     } finally {
       setBusyId(null);

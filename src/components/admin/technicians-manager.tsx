@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Loader2, Check } from "lucide-react";
 import { useI18n } from "@/i18n/i18n-context";
 import { formatMAD } from "@/lib/utils";
@@ -36,8 +37,11 @@ function RateCell({ r }: { r: TechRow }) {
     setBusy(false);
     if (res.ok) {
       setDone(true);
+      toast.success(t("admin.toast.saved"));
       router.refresh();
       setTimeout(() => setDone(false), 1500);
+    } else {
+      toast.error(t("admin.toast.error"));
     }
   }
 

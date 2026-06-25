@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, MessageCircle, MapPin, CalendarClock, X, User } from "lucide-react";
+import { toast } from "sonner";
 import { recordCallOutcomeAction } from "@/lib/order-actions";
 import { formatMAD, waNumber, formatDateTime } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,8 +28,13 @@ export function ConfirmedOrderCard({ order }: { order: Order }) {
     setError(null);
     startTransition(async () => {
       const res = await recordCallOutcomeAction(order.id, "annuler");
-      if (res.ok) router.refresh();
-      else setError(res.error ?? t("conf.confirmed.genericError"));
+      if (res.ok) {
+        toast.success(t("admin.toast.deleted"));
+        router.refresh();
+      } else {
+        toast.error(t("admin.toast.error"));
+        setError(res.error ?? t("conf.confirmed.genericError"));
+      }
     });
   }
 

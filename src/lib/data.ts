@@ -744,6 +744,45 @@ export async function getActiveInstalls(): Promise<Order[]> {
   return rows.map(toOrder);
 }
 
+/** A plombier's COMPLETED (installed) jobs — their history, most recent first. */
+/**
+ * Attach each order's facture ref + public link (when an issued facture exists) so the
+ * Completed cards can re-send it to the client. One facture per order (orderId @unique),
+ * so a single batched query covers the whole list.
+ */
+async function attachInvoiceLinks(orders: Order[]): Promise<Order[]> {
+  if (orders.length === 0) return orders;
+  const invoices = await prisma.invoice.findMany({
+    where: { orderId: { in: orders.map((o) => o.id) }, status: "issued" },
+    select: { id: true, ref: true, orderId: true },
+  });
+  const base = process.env.APP_URL || "http://localhost:3000";
+  const byOrder = new Map(invoices.map((inv) => [inv.orderId as string, inv]));
+  return orders.map((o) => {
+    const inv = byOrder.get(o.id);
+    return inv ? { ...o, invoiceRef: inv.ref, invoiceUrl: `${base}/facture/${inv.id}` } : o;
+  });
+}
+
+export async function getPlombierCompletedJobs(email: string): Promise<Order[]> {
+  const rows = await prisma.order.findMany({
+    where: { assignedTo: email, status: "installed" },
+    orderBy: { completedAt: "desc" },
+    take: 50,
+  });
+  return attachInvoiceLinks(rows.map(toOrder));
+}
+
+/** All completed installs (admin oversight), most recent first. */
+export async function getCompletedInstalls(): Promise<Order[]> {
+  const rows = await prisma.order.findMany({
+    where: { status: "installed", assignedTo: { not: null } },
+    orderBy: { completedAt: "desc" },
+    take: 100,
+  });
+  return attachInvoiceLinks(rows.map(toOrder));
+}
+
 export type UpcomingJob = {
   id: string;
   customerName: string;

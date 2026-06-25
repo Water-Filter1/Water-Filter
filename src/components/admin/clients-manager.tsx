@@ -32,6 +32,7 @@ import {
   X,
   Plus,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useI18n } from "@/i18n/i18n-context";
 import { formatMAD, formatDate, cn, waNumber } from "@/lib/utils";
 import {
@@ -191,8 +192,10 @@ export function ClientsManager({
     if (res.ok) {
       setCreateOpen(false);
       setCForm({ phone: "", name: "", city: "", email: "", address: "" });
+      toast.success(t("admin.toast.created"));
       router.refresh();
     } else {
+      toast.error(t("admin.toast.error"));
       setCError(
         res.error === "EXISTS"
           ? t("admin.crm.errExists")
@@ -473,6 +476,8 @@ export function ClientDetailPanel({
     setTagInput("");
     const res = await setClientTagsAction(detail.phone, optimistic);
     onChanged({ ...detail, tags: res.ok ? res.tags : detail.tags }); // reconcile (server caps/cleans) or roll back
+    if (res.ok) toast.success(t("admin.toast.saved"));
+    else toast.error(t("admin.toast.error"));
   }
   async function removeTag(tag: string) {
     if (!detail) return;
@@ -480,6 +485,8 @@ export function ClientDetailPanel({
     onChanged({ ...detail, tags: optimistic });
     const res = await setClientTagsAction(detail.phone, optimistic);
     onChanged({ ...detail, tags: res.ok ? res.tags : detail.tags });
+    if (res.ok) toast.success(t("admin.toast.saved"));
+    else toast.error(t("admin.toast.error"));
   }
   async function submitNote() {
     if (!detail || !noteText.trim()) return;
@@ -490,6 +497,9 @@ export function ClientDetailPanel({
       const ev = { id: res.note.id, type: "note" as const, date: res.note.createdAt, title: res.note.body, amount: null, status: null, href: null };
       onChanged({ ...detail, notes: [res.note, ...detail.notes], timeline: [ev, ...detail.timeline] });
       setNoteText("");
+      toast.success(t("admin.toast.created"));
+    } else {
+      toast.error(t("admin.toast.error"));
     }
   }
 
@@ -515,7 +525,9 @@ export function ClientDetailPanel({
     if (res.ok) {
       onChanged({ ...detail, name: form.name.trim(), city: form.city.trim(), email: form.email.trim() || null, address: form.address.trim() || null, note: form.note.trim() || null });
       setEditing(false);
+      toast.success(t("admin.toast.saved"));
     } else {
+      toast.error(t("admin.toast.error"));
       setError(t("admin.crm.errorGeneric"));
     }
   }
@@ -526,7 +538,12 @@ export function ClientDetailPanel({
     setBusy(true);
     const res = await setClientStatusAction(detail.phone, next);
     setBusy(false);
-    if (res.ok) onChanged({ ...detail, status: next });
+    if (res.ok) {
+      onChanged({ ...detail, status: next });
+      toast.success(t("admin.toast.saved"));
+    } else {
+      toast.error(t("admin.toast.error"));
+    }
   }
 
   if (loading || !detail) {

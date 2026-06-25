@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   Boxes,
   Wallet,
@@ -95,8 +96,10 @@ export function StockManager({ rows, summary }: { rows: StockRow[]; summary: Sto
     setSaving(false);
     if (res.ok) {
       setAdjustRow(null);
+      toast.success(t("admin.toast.saved"));
       router.refresh();
     } else {
+      toast.error(t("admin.toast.error"));
       setErr(t("admin.stock.saveError"));
     }
   }
@@ -132,7 +135,10 @@ export function StockManager({ rows, summary }: { rows: StockRow[]; summary: Sto
         delete next[r.id];
         return next;
       });
+      toast.success(t("admin.toast.saved"));
       router.refresh();
+    } else {
+      toast.error(t("admin.toast.error"));
     }
   }
 
