@@ -322,7 +322,7 @@ export const DICT: Record<string, Record<Locale, string>> = {
   "admin.analytics.kpiViews": { fr: "Pages vues", ar: "مشاهدات الصفحات", en: "Page views" },
   "admin.analytics.kpiViewsHint": { fr: "pages consultées", ar: "صفحات تمت مشاهدتها", en: "pages viewed" },
   "admin.analytics.kpiOrders": { fr: "Commandes", ar: "الطلبات", en: "Orders" },
-  "admin.analytics.kpiOrdersHint": { fr: "sur la période", ar: "خلال الفترة", en: "in this period" },
+  "admin.analytics.kpiOrdersHint": { fr: "via le site", ar: "عبر الموقع", en: "via the website" },
   "admin.analytics.kpiConversion": { fr: "Taux de conversion", ar: "معدل التحويل", en: "Conversion rate" },
   "admin.analytics.kpiConversionHint": { fr: "commandes ÷ visiteurs", ar: "الطلبات ÷ الزوار", en: "orders ÷ visitors" },
   "admin.analytics.trendTitle": { fr: "Visiteurs dans le temps", ar: "الزوار عبر الوقت", en: "Visitors over time" },

@@ -2785,17 +2785,15 @@ export async function getStoreAnalytics(days = 30): Promise<StoreAnalytics> {
   const since = new Date(now - days * 86_400_000);
   const prevSince = new Date(now - 2 * days * 86_400_000);
 
-  const [rows, prevRows, products, orders] = await Promise.all([
+  const [rows, prevRows, products] = await Promise.all([
     withDbRetry(() =>
       prisma.pageView.findMany({
         where: { createdAt: { gte: since } },
-        select: { visitorId: true, type: true, productSlug: true, source: true, device: true, country: true, createdAt: true },
+        select: { visitorId: true, path: true, type: true, productSlug: true, source: true, device: true, country: true, createdAt: true },
       }),
     ),
     withDbRetry(() => prisma.pageView.findMany({ where: { createdAt: { gte: prevSince, lt: since } }, select: { visitorId: true }, distinct: ["visitorId"] })),
     withDbRetry(() => prisma.product.findMany({ select: { slug: true, name: true } })),
-    // Conversions = genuine storefront web sales only (exclude phone orders + maintenance work-orders).
-    withDbRetry(() => prisma.order.count({ where: { createdAt: { gte: since }, source: "web", kind: "install" } })),
   ]);
 
   const nameBySlug = new Map(products.map((p) => [p.slug, p.name]));
@@ -2817,6 +2815,7 @@ export async function getStoreAnalytics(days = 30): Promise<StoreAnalytics> {
   const countryMap = new Map<string, Set<string>>();
   const prodViews = new Map<string, number>();
   const prodViewers = new Set<string>();
+  const buyers = new Set<string>(); // tracked web conversions: visitors who reached /thank-you
   const dayMap = new Map<string, { views: number; visitors: Set<string> }>();
 
   for (const r of rows) {
@@ -2828,6 +2827,7 @@ export async function getStoreAnalytics(days = 30): Promise<StoreAnalytics> {
       prodViews.set(r.productSlug, (prodViews.get(r.productSlug) ?? 0) + 1);
       prodViewers.add(r.visitorId);
     }
+    if (r.path === "/thank-you") buyers.add(r.visitorId);
     const dk = dayKey(new Date(r.createdAt));
     let de = dayMap.get(dk);
     if (!de) { de = { views: 0, visitors: new Set() }; dayMap.set(dk, de); }
@@ -2850,6 +2850,7 @@ export async function getStoreAnalytics(days = 30): Promise<StoreAnalytics> {
   }
 
   const visitors = visitorSet.size;
+  const orders = buyers.size; // conversions measured from tracked sessions (reached thank-you)
   return {
     days,
     visitors,
