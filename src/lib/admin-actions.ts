@@ -9,7 +9,6 @@ import {
   setReorderPoint,
   getStockMovements,
   setTechnicianCommission,
-  setConfirmateurMonthly,
   logActivity,
   type StockReason,
   type StockMovementRow,
@@ -71,24 +70,6 @@ export async function adjustStockAction(
     });
     revalidatePath("/admin/stock");
     revalidatePath("/admin/products");
-    revalidatePath("/admin");
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "ERROR" };
-  }
-}
-
-export async function setConfirmateurMonthlyAction(amount: number): Promise<OpResult> {
-  const me = await requireRole(["admin"]);
-  try {
-    await setConfirmateurMonthly(amount);
-    await logActivity({
-      actor: me.email,
-      action: "finance.confirmateur",
-      summary: `Confirmateur monthly pay set to ${amount}`,
-      meta: { amount },
-    });
-    revalidatePath("/admin/charges");
     revalidatePath("/admin");
     return { ok: true };
   } catch (e) {

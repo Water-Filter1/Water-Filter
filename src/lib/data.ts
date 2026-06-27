@@ -1093,7 +1093,6 @@ export type SiteSettings = {
   announcement: string | null;
   freeDeliveryThreshold: number;
   deliveryFee: number;
-  confirmateurMonthly: number;
 };
 
 const DEFAULT_SETTINGS: SiteSettings = {
@@ -1112,7 +1111,6 @@ const DEFAULT_SETTINGS: SiteSettings = {
   announcement: null,
   freeDeliveryThreshold: 1000,
   deliveryFee: 40,
-  confirmateurMonthly: 0,
 };
 
 export async function getSettings(): Promise<SiteSettings> {
@@ -1134,7 +1132,6 @@ export async function getSettings(): Promise<SiteSettings> {
     announcement: row.announcement,
     freeDeliveryThreshold: row.freeDeliveryThreshold,
     deliveryFee: row.deliveryFee ?? DEFAULT_SETTINGS.deliveryFee,
-    confirmateurMonthly: row.confirmateurMonthly ?? 0,
   };
 }
 
@@ -1690,9 +1687,9 @@ export type ClientSegments = {
   vip: number;
   consentCount: number; // clients opted in to WhatsApp/SMS
   byCity: { city: string; count: number }[];
-  byChannel: { channel: string; count: number }[]; // acquisition source mix
-  topSpenders: { name: string; phone: string; spent: number }[];
-  newClients: { name: string; phone: string; firstOrderAt: string }[];
+  byChannel: { channel: string; count: number; revenue: number }[]; // acquisition source mix, by revenue
+  topSpenders: { name: string; phone: string; spent: number; orders: number }[];
+  newClients: { name: string; phone: string; city: string; firstOrderAt: string }[];
 };
 
 /** KPI + chart data for the Clients page header and bottom widgets.
@@ -1716,14 +1713,17 @@ export async function getClientSegments(list?: ClientRow[]): Promise<ClientSegme
   const vip = list.filter((c) => c.isVip).length;
   const consentCount = list.filter((c) => c.whatsappOptIn).length;
 
-  const channelMap = new Map<string, number>();
+  const channelMap = new Map<string, { count: number; revenue: number }>();
   for (const c of list) {
     const k = c.acquisitionSource || "__unknown__";
-    channelMap.set(k, (channelMap.get(k) ?? 0) + 1);
+    const cur = channelMap.get(k) ?? { count: 0, revenue: 0 };
+    cur.count += 1;
+    cur.revenue += c.totalSpent;
+    channelMap.set(k, cur);
   }
   const byChannel = [...channelMap.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([channel, count]) => ({ channel, count }));
+    .map(([channel, v]) => ({ channel, count: v.count, revenue: v.revenue }))
+    .sort((a, b) => b.revenue - a.revenue || b.count - a.count);
 
   const cityMap = new Map<string, number>();
   for (const c of list) {
@@ -1735,14 +1735,18 @@ export async function getClientSegments(list?: ClientRow[]): Promise<ClientSegme
   const rest = sortedCities.slice(4).reduce((s, [, n]) => s + n, 0);
   const byCity = rest > 0 ? [...top4, { city: "__other__", count: rest }] : top4;
 
+  // Top spenders: only clients who actually spent — a "top customer" with 0 MAD is meaningless.
   const topSpenders = [...list]
+    .filter((c) => c.totalSpent > 0)
     .sort((a, b) => b.totalSpent - a.totalSpent)
     .slice(0, 5)
-    .map((c) => ({ name: c.name, phone: c.phone, spent: c.totalSpent }));
+    .map((c) => ({ name: c.name, phone: c.phone, spent: c.totalSpent, orders: c.orderCount }));
+  // New clients THIS MONTH (matches the title + the newThisMonth KPI), newest first.
   const newClients = [...list]
+    .filter((c) => new Date(c.firstOrderAt).getTime() >= startMonth)
     .sort((a, b) => new Date(b.firstOrderAt).getTime() - new Date(a.firstOrderAt).getTime())
     .slice(0, 6)
-    .map((c) => ({ name: c.name, phone: c.phone, firstOrderAt: c.firstOrderAt }));
+    .map((c) => ({ name: c.name, phone: c.phone, city: c.city, firstOrderAt: c.firstOrderAt }));
 
   return {
     total,
@@ -2232,15 +2236,14 @@ export async function getFinanceSummary(): Promise<FinanceSummary> {
 
 /* ---------- Profit & Loss (true net profit) ----------
    Revenue counts ONLY realized (installed) sales, bucketed by install date.
-   Gross profit = revenue − technician commission (per install).
-   Net profit  = gross − confirmateur (fixed monthly) − operating expenses. */
+   Gross profit = revenue − product cost (COGS) − technician commission (per install).
+   Net profit  = gross − operating expenses. */
 
 export type PnLLine = {
   revenue: number;
   cogs: number; // product purchase cost of realized sales
   techCommission: number;
   grossProfit: number;
-  confirmateur: number;
   opex: number;
   netProfit: number;
 };
@@ -2252,7 +2255,6 @@ export type FinancePnL = {
   lastMonth: PnLLine;
   year: PnLLine;
   pipeline: number; // confirmed, not yet installed (not counted as profit)
-  confirmateurMonthly: number;
   byCategoryMonth: { category: string; amount: number }[];
   commissionsMonth: CommissionLine[];
 };
@@ -2262,10 +2264,6 @@ export async function getFinancePnL(): Promise<FinancePnL> {
   const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const startYear = new Date(now.getFullYear(), 0, 1);
-  const monthsElapsed = now.getMonth() + 1;
-
-  const settings = await getSettings();
-  const confMonthly = settings.confirmateurMonthly;
 
   const plombiers = await withDbRetry(() =>
     prisma.adminUser.findMany({ where: { role: "plombier" }, select: { email: true, name: true, commissionPerInstall: true } }),
@@ -2326,9 +2324,9 @@ export async function getFinancePnL(): Promise<FinancePnL> {
     return r._sum.amount ?? 0;
   }
 
-  function pnl(rev: number, cogsV: number, comm: number, conf: number, op: number): PnLLine {
+  function pnl(rev: number, cogsV: number, comm: number, op: number): PnLLine {
     const grossProfit = rev - cogsV - comm;
-    return { revenue: rev, cogs: cogsV, techCommission: comm, grossProfit, confirmateur: conf, opex: op, netProfit: grossProfit - conf - op };
+    return { revenue: rev, cogs: cogsV, techCommission: comm, grossProfit, opex: op, netProfit: grossProfit - op };
   }
 
   const [revM, revLM, revY] = await Promise.all([revenue(startMonth), revenue(startLastMonth, startMonth), revenue(startYear)]);
@@ -2347,20 +2345,13 @@ export async function getFinancePnL(): Promise<FinancePnL> {
   const byCategoryMonth = [...catMap.entries()].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
 
   return {
-    month: pnl(revM, cogsM, commM.total, confMonthly, opM),
-    lastMonth: pnl(revLM, cogsLM, commLM.total, confMonthly, opLM),
-    year: pnl(revY, cogsY, commY.total, confMonthly * monthsElapsed, opY),
+    month: pnl(revM, cogsM, commM.total, opM),
+    lastMonth: pnl(revLM, cogsLM, commLM.total, opLM),
+    year: pnl(revY, cogsY, commY.total, opY),
     pipeline,
-    confirmateurMonthly: confMonthly,
     byCategoryMonth,
     commissionsMonth: commM.lines,
   };
-}
-
-export async function setConfirmateurMonthly(amount: number): Promise<void> {
-  if (!Number.isFinite(amount)) throw new Error("Invalid amount");
-  const v = Math.max(0, Math.round(amount));
-  await withDbRetry(() => updateSettings({ confirmateurMonthly: v }));
 }
 
 /* ============================================================

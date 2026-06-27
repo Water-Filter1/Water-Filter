@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Label as ChartLabel, Pie, PieChart, Cell } from "recharts";
@@ -94,6 +94,22 @@ function channelLabel(t: (k: string) => string, ch: string) {
   if (ch === "referral") return t("admin.crm.channelReferral");
   if (ch === "other") return t("admin.crm.channelOther");
   return ch.charAt(0).toUpperCase() + ch.slice(1); // Facebook, Tiktok, Instagram, Google
+}
+
+/** Two-letter initials for an avatar fallback. */
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
+
+/** Small uppercase card header with an optional right-side hint. */
+function WidgetHead({ title, hint }: { title: string; hint?: ReactNode }) {
+  return (
+    <div className="mb-4 flex items-baseline justify-between gap-2">
+      <p className="text-xs font-bold uppercase tracking-wider text-ink-soft">{title}</p>
+      {hint != null && <span className="shrink-0 text-[11px] font-semibold text-slate-400">{hint}</span>}
+    </div>
+  );
 }
 
 export function ClientsManager({
@@ -805,11 +821,11 @@ function CityDonut({ segments }: { segments: ClientSegments }) {
 
   return (
     <Card className="gap-0 p-5">
-      <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-soft">{t("admin.crm.cityTitle")}</p>
+      <WidgetHead title={t("admin.crm.cityTitle")} hint={total > 0 ? t("admin.crm.clientsWord") : undefined} />
       {total === 0 ? (
         <p className="py-10 text-center text-sm text-ink-soft">—</p>
       ) : (
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-4">
           <ChartContainer config={config} className="aspect-square h-32 w-32 shrink-0">
             <PieChart>
               <Pie data={data} dataKey="value" nameKey="key" innerRadius={40} outerRadius={58} strokeWidth={2}>
@@ -832,14 +848,12 @@ function CityDonut({ segments }: { segments: ClientSegments }) {
               </Pie>
             </PieChart>
           </ChartContainer>
-          <ul className="flex-1 space-y-1.5 text-sm">
+          <ul className="min-w-0 flex-1 space-y-2 text-xs">
             {data.map((d) => (
-              <li key={d.key} className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-2 text-ink" dir="auto">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: d.fill }} />
-                  {d.label}
-                </span>
-                <span className="font-semibold text-ink-soft">{Math.round((d.value / total) * 100)}% ({d.value})</span>
+              <li key={d.key} className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: d.fill }} />
+                <span className="min-w-0 flex-1 truncate font-semibold text-ink" dir="auto">{d.label}</span>
+                <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums text-ink-soft">{Math.round((d.value / total) * 100)}% · {d.value}</span>
               </li>
             ))}
           </ul>
@@ -851,20 +865,35 @@ function CityDonut({ segments }: { segments: ClientSegments }) {
 
 function Channels({ segments }: { segments: ClientSegments }) {
   const { t } = useI18n();
-  const total = segments.byChannel.reduce((s, d) => s + d.count, 0);
+  const rows = segments.byChannel;
+  const totalClients = rows.reduce((s, d) => s + d.count, 0);
+  const maxRev = Math.max(...rows.map((d) => d.revenue), 1);
+  const noRevenue = rows.every((d) => d.revenue === 0);
   return (
     <Card className="gap-0 p-5">
-      <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-soft">{t("admin.crm.channelsTitle")}</p>
-      {segments.byChannel.length === 0 ? (
+      <WidgetHead title={t("admin.crm.channelsTitle")} hint={t("admin.crm.byRevenue")} />
+      {rows.length === 0 ? (
         <p className="py-10 text-center text-sm text-ink-soft">—</p>
       ) : (
-        <ul className="space-y-2 text-sm">
-          {segments.byChannel.map((d) => (
-            <li key={d.channel} className="flex items-center justify-between gap-2">
-              <span className="text-ink">{channelLabel(t, d.channel)}</span>
-              <span className="font-semibold text-ink-soft">{total ? Math.round((d.count / total) * 100) : 0}% ({d.count})</span>
-            </li>
-          ))}
+        <ul className="space-y-3.5">
+          {rows.map((d) => {
+            const pct = totalClients ? Math.round((d.count / totalClients) * 100) : 0;
+            const w = noRevenue ? pct : Math.max(4, Math.round((d.revenue / maxRev) * 100));
+            return (
+              <li key={d.channel}>
+                <div className="mb-1.5 flex items-baseline justify-between gap-2 text-sm">
+                  <span className="truncate font-semibold text-ink">{channelLabel(t, d.channel)}</span>
+                  <span className="shrink-0 font-bold tabular-nums text-ink">{formatMAD(d.revenue)}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-aqua-400" style={{ width: `${w}%` }} />
+                  </div>
+                  <span className="shrink-0 text-[11px] font-semibold tabular-nums text-ink-soft">{d.count} · {pct}%</span>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </Card>
@@ -873,18 +902,31 @@ function Channels({ segments }: { segments: ClientSegments }) {
 
 function TopSpenders({ segments }: { segments: ClientSegments }) {
   const { t } = useI18n();
+  const rows = segments.topSpenders;
+  const max = Math.max(...rows.map((c) => c.spent), 1);
   return (
     <Card className="gap-0 p-5">
-      <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-soft">{t("admin.crm.topTitle")}</p>
-      {segments.topSpenders.length === 0 ? (
-        <p className="py-10 text-center text-sm text-ink-soft">—</p>
+      <WidgetHead title={t("admin.crm.topTitle")} hint={t("admin.crm.bySpend")} />
+      {rows.length === 0 ? (
+        <p className="py-10 text-center text-sm font-semibold text-ink-soft">{t("admin.crm.noSpenders")}</p>
       ) : (
-        <ol className="space-y-3">
-          {segments.topSpenders.map((c, i) => (
+        <ol className="space-y-3.5">
+          {rows.map((c, i) => (
             <li key={c.phone} className="flex items-center gap-3">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">{i + 1}</span>
-              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink" dir="auto">{c.name}</span>
-              <span className="text-sm font-semibold text-ink">{formatMAD(c.spent)}</span>
+              <span className="w-3.5 shrink-0 text-right text-xs font-bold tabular-nums text-slate-400">{i + 1}</span>
+              <Avatar className="h-8 w-8 shrink-0">
+                <AvatarFallback className="bg-brand-50 text-[11px] font-bold text-brand-700">{initials(c.name)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-ink" dir="auto">{c.name}</p>
+                <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-brand-300" style={{ width: `${Math.max(6, Math.round((c.spent / max) * 100))}%` }} />
+                </div>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-sm font-bold tabular-nums text-ink">{formatMAD(c.spent)}</p>
+                <p className="text-[11px] font-semibold text-ink-soft">{t("admin.crm.ordersN", { n: c.orders })}</p>
+              </div>
             </li>
           ))}
         </ol>
@@ -895,17 +937,27 @@ function TopSpenders({ segments }: { segments: ClientSegments }) {
 
 function NewClients({ segments }: { segments: ClientSegments }) {
   const { t } = useI18n();
+  const rows = segments.newClients;
   return (
     <Card className="gap-0 p-5">
-      <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-soft">{t("admin.crm.newTitle")}</p>
-      {segments.newClients.length === 0 ? (
-        <p className="py-10 text-center text-sm text-ink-soft">—</p>
+      <WidgetHead
+        title={t("admin.crm.newTitle")}
+        hint={segments.newThisMonth > 0 ? <span className="rounded-full bg-sky-50 px-2 py-0.5 font-bold text-sky-600">+{segments.newThisMonth}</span> : undefined}
+      />
+      {rows.length === 0 ? (
+        <p className="py-10 text-center text-sm font-semibold text-ink-soft">{t("admin.crm.noNewMonth")}</p>
       ) : (
         <ul className="space-y-3">
-          {segments.newClients.map((c) => (
-            <li key={c.phone} className="flex items-center justify-between gap-2 text-sm">
-              <span className="min-w-0 flex-1 truncate font-semibold text-ink" dir="auto">{c.name}</span>
-              <span className="text-ink-soft">{formatDate(c.firstOrderAt)}</span>
+          {rows.map((c) => (
+            <li key={c.phone} className="flex items-center gap-3">
+              <Avatar className="h-8 w-8 shrink-0">
+                <AvatarFallback className="bg-sky-50 text-[11px] font-bold text-sky-600">{initials(c.name)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-ink" dir="auto">{c.name}</p>
+                <p className="truncate text-[11px] font-semibold text-ink-soft" dir="auto">{c.city || "—"}</p>
+              </div>
+              <span className="shrink-0 text-[11px] font-semibold text-ink-soft">{formatDate(c.firstOrderAt)}</span>
             </li>
           ))}
         </ul>

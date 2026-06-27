@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { createExpenseAction, deleteExpenseAction, setConfirmateurMonthlyAction } from "@/lib/admin-actions";
+import { createExpenseAction, deleteExpenseAction } from "@/lib/admin-actions";
 import type { ExpenseRow, FinancePnL } from "@/lib/data";
 import { KpiCard } from "@/components/admin/kpi-card";
 import { DataTable, type Column } from "@/components/admin/data-table";
@@ -84,9 +84,6 @@ export function ChargesManager({ pnl, expenses }: { pnl: FinancePnL; expenses: E
   const [error, setError] = useState<string | null>(null);
   const [delId, setDelId] = useState<string | null>(null);
 
-  const [conf, setConf] = useState(String(pnl.confirmateurMonthly));
-  const [confBusy, setConfBusy] = useState(false);
-
   const catLabel = (c: string) => t(`admin.charges.cat.${c}`);
 
   async function add() {
@@ -125,22 +122,6 @@ export function ChargesManager({ pnl, expenses }: { pnl: FinancePnL; expenses: E
     }
     router.refresh();
     setDelId(null);
-  }
-
-  const confNum = conf.trim() === "" ? NaN : Number(conf);
-  const confChanged = Number.isFinite(confNum) && confNum >= 0 && confNum !== pnl.confirmateurMonthly;
-
-  async function saveConf() {
-    if (!confChanged) return;
-    setConfBusy(true);
-    const res = await setConfirmateurMonthlyAction(confNum);
-    setConfBusy(false);
-    if (res.ok) {
-      toast.success(t("admin.toast.saved"));
-      router.refresh();
-    } else {
-      toast.error(t("admin.toast.error"));
-    }
   }
 
   const kpis = [
@@ -247,7 +228,6 @@ export function ChargesManager({ pnl, expenses }: { pnl: FinancePnL; expenses: E
               <MoneyRow label={t("admin.charges.techCommission")} value={-p.techCommission} variant="indent" />
               <MoneyRow label={t("admin.charges.grossProfit")} value={p.grossProfit} variant="subtotal" />
               <SectionRow label={t("admin.charges.opexLine")} />
-              <MoneyRow label={t("admin.charges.confirmateur")} value={-p.confirmateur} variant="indent" />
               <MoneyRow label={t("admin.charges.opexOther")} value={-p.opex} variant="indent" />
               <MoneyRow label={t("admin.charges.netProfit")} value={p.netProfit} variant="total" />
             </TableBody>
@@ -283,23 +263,6 @@ export function ChargesManager({ pnl, expenses }: { pnl: FinancePnL; expenses: E
                 </TableBody>
               </Table>
             )}
-          </Card>
-
-          {/* Confirmateur monthly pay */}
-          <Card className="p-5">
-            <Label className="mb-1 block text-sm font-semibold text-ink">{t("admin.charges.confirmateurPay")}</Label>
-            <div className="flex items-center gap-2">
-              <Input type="number" min="0" value={conf} onChange={(e) => setConf(e.target.value)} className="h-10 w-32" />
-              <span className="text-sm font-semibold text-ink-soft">MAD</span>
-              <Button
-                onClick={saveConf}
-                disabled={confBusy || !confChanged}
-                className="ms-auto font-semibold"
-              >
-                {confBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : t("admin.charges.save")}
-              </Button>
-            </div>
-            <p className="mt-2 text-xs text-ink-soft">{t("admin.charges.confirmateurHint")}</p>
           </Card>
         </div>
       </div>
