@@ -265,3 +265,25 @@ model Expense {
   @@index([date])
   @@index([category])
 }
+
+// First-party storefront analytics — one row per public page view. Privacy-light: only an
+// anonymous random visitor id (cookie), no name/phone/IP stored. Powers the admin Analytics
+// dashboard (visitors, traffic source, device, top products, funnel).
+model PageView {
+  id          String   @id @default(cuid())
+  visitorId   String // anonymous first-party id (cookie) for unique-visitor counting
+  path        String // e.g. "/product/karofi-u65"
+  type        String   @default("page") // "page" | "product"
+  productSlug String? // set when type = "product"
+  source      String   @default("direct") // facebook | instagram | tiktok | google | referral | direct
+  device      String   @default("desktop") // mobile | tablet | desktop
+  country     String? // ISO-2, best-effort from edge geo headers
+  referrer    String? // referrer host (diagnostics only)
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([type])
+  @@index([source])
+  @@index([productSlug])
+  @@index([visitorId])
+}

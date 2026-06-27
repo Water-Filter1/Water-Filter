@@ -1,6 +1,7 @@
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { WhatsappButton } from "@/components/whatsapp-button";
+import { VisitTracker } from "@/components/visit-tracker";
 import { I18nProvider } from "@/i18n/i18n-context";
 import { SettingsProvider } from "@/context/settings-context";
 import { getLocale } from "@/i18n/server";
@@ -26,6 +27,7 @@ export default async function StorefrontLayout({
           <main className="flex-1">{children}</main>
           <SiteFooter settings={settings} />
           <WhatsappButton settings={settings} />
+          <VisitTracker />
         </div>
       </SettingsProvider>
     </I18nProvider>

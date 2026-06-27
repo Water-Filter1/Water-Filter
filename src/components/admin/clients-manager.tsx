@@ -138,6 +138,31 @@ export function ClientsManager({
 
   const pct = (v: number) => (segments.total ? Math.round((v / segments.total) * 100) : 0);
 
+  // 12-month trend series for the KPI sparklines (dashboard-style), derived from the client
+  // list by firstOrderAt. Cumulative for stock-like metrics, per-month for "new".
+  const spark = useMemo(() => {
+    const now = new Date();
+    const ts = (iso: string) => new Date(iso).getTime();
+    const cumCustomers: number[] = [];
+    const cumBuyers: number[] = [];
+    const cumInstalled: number[] = [];
+    const cumRevenue: number[] = [];
+    const newPerMonth: number[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const start = new Date(now.getFullYear(), now.getMonth() - i, 1).getTime();
+      const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 1).getTime();
+      cumCustomers.push(clients.filter((c) => ts(c.firstOrderAt) < end).length);
+      cumBuyers.push(clients.filter((c) => c.orderCount > 0 && ts(c.firstOrderAt) < end).length);
+      cumInstalled.push(clients.filter((c) => c.installCount > 0 && ts(c.firstOrderAt) < end).length);
+      cumRevenue.push(clients.filter((c) => ts(c.firstOrderAt) < end).reduce((s, c) => s + c.totalSpent, 0));
+      newPerMonth.push(clients.filter((c) => ts(c.firstOrderAt) >= start && ts(c.firstOrderAt) < end).length);
+    }
+    const thisM = newPerMonth[newPerMonth.length - 1] ?? 0;
+    const lastM = newPerMonth[newPerMonth.length - 2] ?? 0;
+    const newMoM = lastM > 0 ? Math.round(((thisM - lastM) / lastM) * 100) : undefined;
+    return { cumCustomers, cumBuyers, cumInstalled, cumRevenue, newPerMonth, newMoM };
+  }, [clients]);
+
   const filtered = useMemo(() => {
     let list = clients;
     if (seg === "vip") list = list.filter((c) => c.isVip);
@@ -223,12 +248,12 @@ export function ClientsManager({
   }
 
   const KPIS = [
-    { icon: Users, tone: "bg-brand-50 text-brand-600", label: t("admin.crm.kpiTotal"), value: String(segments.total), hint: t("admin.crm.kpiTotalHint") },
-    { icon: ShoppingCart, tone: "bg-emerald-50 text-emerald-600", label: t("admin.crm.kpiWithOrders"), value: String(segments.acheteurs), hint: t("admin.crm.ofTotal", { pct: pct(segments.acheteurs) }) },
-    { icon: PackageCheck, tone: "bg-indigo-50 text-indigo-600", label: t("admin.crm.kpiInstalled"), value: String(segments.installed), hint: t("admin.crm.kpiInstalledHint") },
-    { icon: Wrench, tone: "bg-amber-50 text-amber-600", label: t("admin.crm.kpiDue"), value: String(segments.due), hint: t("admin.crm.kpiDueHint") },
-    { icon: UserPlus, tone: "bg-sky-50 text-sky-600", label: t("admin.crm.kpiNewMonth"), value: String(segments.newThisMonth), hint: t("admin.crm.ofTotal", { pct: pct(segments.newThisMonth) }) },
-    { icon: Wallet, tone: "bg-violet-50 text-violet-600", label: t("admin.crm.kpiRevenue"), value: formatMAD(segments.revenue), hint: t("admin.crm.kpiRevenueHint") },
+    { icon: Users, tone: "bg-brand-50 text-brand-600", glow: "bg-brand-400", label: t("admin.crm.kpiTotal"), value: String(segments.total), hint: t("admin.crm.kpiTotalHint"), spark: spark.cumCustomers, sparkColor: "var(--color-brand-500)" },
+    { icon: ShoppingCart, tone: "bg-emerald-50 text-emerald-600", glow: "bg-emerald-400", label: t("admin.crm.kpiWithOrders"), value: String(segments.acheteurs), hint: t("admin.crm.ofTotal", { pct: pct(segments.acheteurs) }), spark: spark.cumBuyers, sparkColor: "#10b981" },
+    { icon: PackageCheck, tone: "bg-indigo-50 text-indigo-600", glow: "bg-indigo-400", label: t("admin.crm.kpiInstalled"), value: String(segments.installed), hint: t("admin.crm.kpiInstalledHint"), spark: spark.cumInstalled, sparkColor: "#6366f1" },
+    { icon: Wrench, tone: "bg-amber-50 text-amber-600", glow: "bg-amber-400", label: t("admin.crm.kpiDue"), value: String(segments.due), hint: t("admin.crm.kpiDueHint") },
+    { icon: UserPlus, tone: "bg-sky-50 text-sky-600", glow: "bg-sky-400", label: t("admin.crm.kpiNewMonth"), value: String(segments.newThisMonth), hint: t("admin.crm.ofTotal", { pct: pct(segments.newThisMonth) }), trend: spark.newMoM, spark: spark.newPerMonth, sparkColor: "#0ea5e9" },
+    { icon: Wallet, tone: "bg-violet-50 text-violet-600", glow: "bg-violet-400", label: t("admin.crm.kpiRevenue"), value: formatMAD(segments.revenue), hint: t("admin.crm.kpiRevenueHint"), spark: spark.cumRevenue, sparkColor: "#8b5cf6" },
   ];
 
   const SEGS: { key: Seg; label: string; count: number }[] = [
@@ -268,7 +293,7 @@ export function ClientsManager({
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         {KPIS.map((k) => (
-          <KpiCard key={k.label} icon={k.icon} tone={k.tone} label={k.label} value={k.value} hint={k.hint} />
+          <KpiCard key={k.label} {...k} />
         ))}
       </div>
 

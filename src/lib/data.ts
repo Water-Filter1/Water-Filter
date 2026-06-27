@@ -9,7 +9,7 @@ import type {
   Spec,
   ProductVariant,
 } from "@/lib/types";
-import { addMonths } from "@/lib/utils";
+import { addMonths, TZ } from "@/lib/utils";
 
 /* ---------- mappers (DB row -> app type) ---------- */
 
@@ -2757,4 +2757,114 @@ export async function getInvoiceableOrders(limit = 6): Promise<Order[]> {
     take: limit,
   });
   return orders.map(toOrder);
+}
+
+/* ============================================================
+   Storefront analytics (first-party) — powers /admin/analytics
+   ============================================================ */
+
+export type StoreAnalytics = {
+  days: number;
+  visitors: number;
+  pageViews: number;
+  orders: number;
+  conversion: number; // % orders / visitors
+  prevVisitors: number; // previous equal-length window (for the delta arrow)
+  bySource: { source: string; visitors: number }[];
+  byDevice: { device: string; visitors: number }[];
+  byCountry: { country: string; visitors: number }[];
+  topProducts: { slug: string; name: string; views: number }[];
+  trend: { label: string; visitors: number; views: number }[];
+  funnel: { visitors: number; productViewers: number; orders: number };
+};
+
+/** Aggregate first-party PageView rows into the admin Analytics dashboard data. Visitors are
+ *  counted as DISTINCT anonymous visitorIds; product cards count raw views. */
+export async function getStoreAnalytics(days = 30): Promise<StoreAnalytics> {
+  const now = Date.now();
+  const since = new Date(now - days * 86_400_000);
+  const prevSince = new Date(now - 2 * days * 86_400_000);
+
+  const [rows, prevRows, products, orders] = await Promise.all([
+    withDbRetry(() =>
+      prisma.pageView.findMany({
+        where: { createdAt: { gte: since } },
+        select: { visitorId: true, type: true, productSlug: true, source: true, device: true, country: true, createdAt: true },
+      }),
+    ),
+    withDbRetry(() => prisma.pageView.findMany({ where: { createdAt: { gte: prevSince, lt: since } }, select: { visitorId: true }, distinct: ["visitorId"] })),
+    withDbRetry(() => prisma.product.findMany({ select: { slug: true, name: true } })),
+    // Conversions = genuine storefront web sales only (exclude phone orders + maintenance work-orders).
+    withDbRetry(() => prisma.order.count({ where: { createdAt: { gte: since }, source: "web", kind: "install" } })),
+  ]);
+
+  const nameBySlug = new Map(products.map((p) => [p.slug, p.name]));
+  // Bucket + label days in the BUSINESS timezone (Africa/Casablanca), consistent with the rest
+  // of the app — otherwise UTC server time misattributes the last hour of each Moroccan day.
+  const keyFmt = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" });
+  const labelFmt = new Intl.DateTimeFormat("fr-MA", { timeZone: TZ, month: "short", day: "numeric" });
+  const dayKey = (d: Date) => keyFmt.format(d);
+  const add = (m: Map<string, Set<string>>, k: string | null, v: string) => {
+    if (!k) return;
+    let s = m.get(k);
+    if (!s) { s = new Set(); m.set(k, s); }
+    s.add(v);
+  };
+
+  const visitorSet = new Set<string>();
+  const sourceMap = new Map<string, Set<string>>();
+  const deviceMap = new Map<string, Set<string>>();
+  const countryMap = new Map<string, Set<string>>();
+  const prodViews = new Map<string, number>();
+  const prodViewers = new Set<string>();
+  const dayMap = new Map<string, { views: number; visitors: Set<string> }>();
+
+  for (const r of rows) {
+    visitorSet.add(r.visitorId);
+    add(sourceMap, r.source, r.visitorId);
+    add(deviceMap, r.device, r.visitorId);
+    add(countryMap, r.country, r.visitorId);
+    if (r.type === "product" && r.productSlug) {
+      prodViews.set(r.productSlug, (prodViews.get(r.productSlug) ?? 0) + 1);
+      prodViewers.add(r.visitorId);
+    }
+    const dk = dayKey(new Date(r.createdAt));
+    let de = dayMap.get(dk);
+    if (!de) { de = { views: 0, visitors: new Set() }; dayMap.set(dk, de); }
+    de.views += 1;
+    de.visitors.add(r.visitorId);
+  }
+
+  const sortDesc = (m: Map<string, Set<string>>) =>
+    [...m.entries()].map(([k, s]) => ({ k, n: s.size })).sort((a, b) => b.n - a.n);
+
+  const trend: { label: string; visitors: number; views: number }[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now - i * 86_400_000);
+    const e = dayMap.get(dayKey(d));
+    trend.push({
+      label: labelFmt.format(d),
+      visitors: e ? e.visitors.size : 0,
+      views: e ? e.views : 0,
+    });
+  }
+
+  const visitors = visitorSet.size;
+  return {
+    days,
+    visitors,
+    pageViews: rows.length,
+    orders,
+    conversion: visitors ? Math.round((orders / visitors) * 1000) / 10 : 0,
+    prevVisitors: new Set(prevRows.map((r) => r.visitorId)).size,
+    bySource: sortDesc(sourceMap).map((x) => ({ source: x.k, visitors: x.n })),
+    byDevice: sortDesc(deviceMap).map((x) => ({ device: x.k, visitors: x.n })),
+    byCountry: sortDesc(countryMap).slice(0, 6).map((x) => ({ country: x.k, visitors: x.n })),
+    topProducts: [...prodViews.entries()]
+      .map(([slug, views]) => ({ slug, name: nameBySlug.get(slug) ?? slug, views }))
+      .sort((a, b) => b.views - a.views)
+      .slice(0, 8),
+    trend,
+    funnel: { visitors, productViewers: prodViewers.size, orders },
+  };
 }

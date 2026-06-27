@@ -20,6 +20,7 @@ import {
   Boxes,
   Wallet,
   Receipt,
+  LineChart,
 } from "lucide-react";
 import { cn, formatMAD } from "@/lib/utils";
 import { logoutAction } from "@/lib/auth-actions";
@@ -59,6 +60,7 @@ const NAV = [
   { labelKey: "admin.nav.stock", href: "/admin/stock", icon: Boxes },
   { labelKey: "admin.nav.charges", href: "/admin/charges", icon: Wallet },
   { labelKey: "admin.nav.users", href: "/admin/users", icon: UserCog },
+  { labelKey: "admin.nav.analytics", href: "/admin/analytics", icon: LineChart },
   { labelKey: "admin.nav.settings", href: "/admin/settings", icon: Settings },
 ];
 
